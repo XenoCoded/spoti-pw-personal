@@ -178,7 +178,7 @@ void SGOpenModSettings(UIView *source) {
 
 // At the end of the settings list, or above the first row of the drawer's, with the inset for them
 // added again whenever Spotify resets the inset. The drawer carries two rows (personal fork):
-// Mod Settings, then Listening stats under it.
+// Mod Settings, then Listening stats and the Lock screen page under it.
 static void placeRow(UICollectionView *list, NSArray<SGModSettingsRow *> *rows) {
     CGFloat bottom = list.contentSize.height;
     [rows enumerateObjectsUsingBlock:^(SGModSettingsRow *row, NSUInteger i, BOOL *stop) {
@@ -201,6 +201,16 @@ static SGModSettingsRow *statsRow(void) {
     SGModSettingsRow *row = [[SGModSettingsRow alloc] initWithFrame:CGRectZero];
     row.drawer = YES;
     [row applyTitle:@"Listening stats" symbol:@"chart.bar.fill" page:^UIViewController *{ return SGListeningStatsPage(); }];
+    return row;
+}
+
+// The Lock screen page joins the drawer too (Batch 19): it is the page this
+// fork's work keeps landing on — artwork style, clips, Live Activity — and
+// it was three taps deep from here before it was promoted.
+static SGModSettingsRow *lockScreenRow(void) {
+    SGModSettingsRow *row = [[SGModSettingsRow alloc] initWithFrame:CGRectZero];
+    row.drawer = YES;
+    [row applyTitle:@"Lock screen" symbol:@"lock.fill" page:^UIViewController *{ return SGLockScreenSettingsPage(); }];
     return row;
 }
 
@@ -262,9 +272,11 @@ static BOOL isSettingsRoot(UIViewController *list) {
         SGModSettingsRow *row = [[SGModSettingsRow alloc] initWithFrame:CGRectZero];
         row.drawer = YES;
         SGModSettingsRow *stats = statsRow();
-        objc_setAssociatedObject(v, &kRowKey, @[row, stats], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        SGModSettingsRow *lock = lockScreenRow();
+        objc_setAssociatedObject(v, &kRowKey, @[row, stats, lock], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [v addSubview:row];
         [v addSubview:stats];
+        [v addSubview:lock];
     });
 }
 %end

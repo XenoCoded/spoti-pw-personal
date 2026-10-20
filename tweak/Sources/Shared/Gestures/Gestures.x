@@ -7,6 +7,7 @@
 #import "Core/SGCore.h"
 #import "Gestures.h"
 #import "Headers/SPTNowPlayingPlaybackController.h"
+#import "Shared/Player/SpeedPitch.h"
 
 static __weak SPTNowPlayingPlaybackControllerImplementation *sg_player;
 static void (^sg_observer)(SGGestureAction action);
@@ -46,6 +47,15 @@ static void perform(SGGestureAction action) {
             break;
         case SGGestureRepeat:
             [player toggleRepeatMode];
+            break;
+        // Speed in quarter steps over the range Speed & pitch itself allows
+        // (personal fork): the hold-to-speed of other players, on the double tap
+        // this grid already owns — left cell down, right cell up, in the page.
+        case SGGestureSpeedUp:
+            SGSetPlayerSpeed(MIN(2.0, SGPlayerSpeed() + 0.25));
+            break;
+        case SGGestureSpeedDown:
+            SGSetPlayerSpeed(MAX(0.5, SGPlayerSpeed() - 0.25));
             break;
     }
 }

@@ -16,6 +16,9 @@ typedef NS_ENUM(NSInteger, SGGestureAction) {
     SGGesturePreviousTrack,
     SGGestureShuffle,
     SGGestureRepeat,
+    // Appended, never inserted: stored zones name their actions by this number.
+    SGGestureSpeedUp,
+    SGGestureSpeedDown,
 };
 
 NSArray<NSString *> *SGGestureActionNames(void);

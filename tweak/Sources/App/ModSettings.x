@@ -196,7 +196,7 @@ static void placeRow(UICollectionView *list, NSArray<SGModSettingsRow *> *rows) 
 static SGModSettingsRow *statsRow(void) {
     SGModSettingsRow *row = [[SGModSettingsRow alloc] initWithFrame:CGRectZero];
     row.drawer = YES;
-    [row applyTitle:@"Listening stats" symbol:@"chart.bar.fill" page:^UIViewController *{ return SGListeningStatsSettingsPage(); }];
+    [row applyTitle:@"Listening stats" symbol:@"chart.bar.fill" page:^UIViewController *{ return SGListeningStatsPage(); }];
     return row;
 }
 

@@ -8,6 +8,7 @@
 #import "SGCanvas.h"
 #import "Headers/SPTPlayer.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/LyricArtwork/LyricArtwork.h"
 #import "Shared/Player/PlayerState.h"
 
 static NSString *const kCanvazAddress = @"https://spclient.wg.spotify.com/canvaz-cache/v0/canvases";
@@ -183,8 +184,9 @@ static BOOL keyOffered(void) {
 }
 
 static void resolve(SPTPlayerTrack *track) {
-    // Read on every track, so the switch needs no restart.
-    if (!SGFlag(SGKeyLockScreenArtwork, YES)) {
+    // Read on every track, so the switch needs no restart. Lyric artwork (the fork's
+    // stills) takes the artwork slot while it is on, so this counts as off then too.
+    if (!SGFlag(SGKeyLockScreenArtwork, YES) || SGFlag(SGKeyLyricArtwork, NO)) {
         if (sg_wanted) {
             sg_wanted = nil;
             SGArtworkCancelFetch();

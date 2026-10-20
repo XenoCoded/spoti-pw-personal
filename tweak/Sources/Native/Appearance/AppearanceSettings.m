@@ -26,5 +26,6 @@ NSArray<SGModRow *> *SGNativeAppearanceRows(void) {
     return @[
         SGWithSymbol(SGOptionRow(@"AMOLED background", nil, SGKeyAmoled), @"moon"),
         SGWithSymbol(SGStatActionRow(@"Accent colour", nil, ^NSString *{ return SGAccentLabel(); }, ^{ chooseAccent(); }), @"paintpalette"),
+        SGWithSymbol(SGOptionRow(@"Match cover art", @"The accent follows the playing song's cover, everywhere Spotify's green would be.", SGKeyAccentMatchArtwork), @"photo.on.rectangle.angled"),
     ];
 }

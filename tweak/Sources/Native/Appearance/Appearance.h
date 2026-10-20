@@ -5,6 +5,8 @@
 
 #define SGKeyAmoled @"spotifyglass.amoled"
 #define SGKeyAccent @"spotifyglass.accent"   // 0xRRGGBB; unset or negative keeps Spotify's own green
+// The accent follows the playing song's cover instead (personal fork).
+#define SGKeyAccentMatchArtwork @"spotifyglass.accent.matchArtwork"
 
 UIColor *SGAccentColor(void);   // nil while Spotify's own green is kept
 NSString *SGAccentLabel(void);  // "#RRGGBB", or the name of Spotify's own

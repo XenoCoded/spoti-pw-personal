@@ -25,5 +25,6 @@ static void chooseAccent(void) {
 NSArray<SGModRow *> *SGRAppearanceRows(void) {
     return @[
         SGWithSymbol(SGStatActionRow(@"Accent colour", nil, ^NSString *{ return SGRAccentLabel(); }, ^{ chooseAccent(); }), @"paintpalette"),
+        SGWithSymbol(SGOptionRow(@"Match cover art", @"The accent follows the playing song's cover, everywhere the accent would be.", SGRKeyAccentMatchArtwork), @"photo.on.rectangle.angled"),
     ];
 }

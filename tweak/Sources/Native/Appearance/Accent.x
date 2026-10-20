@@ -7,6 +7,7 @@
 #import "Core/SGCore.h"
 #import "Appearance.h"
 #import "Settings/SGPageStyle.h"
+#import "Shared/ArtworkPalette/ArtworkPalette.h"
 
 // The greens the app is known to build from literals: the token, and the older brand green the
 // upsell backend still names.
@@ -15,6 +16,13 @@ static const uint32_t kGreens[] = {0x1ED760, 0x1DB954};
 static NSInteger sg_accent = -1;   // 0xRRGGBB once chosen, read at launch
 
 static NSInteger chosen(void) {
+    // Match cover art (personal fork): the playing song's colour outranks the
+    // picked one; the picked one is the fallback until the first cover lands.
+    if (SGFlag(SGKeyAccentMatchArtwork, NO)) {
+        SGArtworkPaletteStart();
+        uint32_t palette = 0;
+        if (SGArtworkPaletteRGB(&palette)) return (NSInteger)palette;
+    }
     NSInteger rgb = SGInt(SGKeyAccent, -1);
     return rgb >= 0 && rgb <= 0xFFFFFF ? rgb : -1;
 }
@@ -34,6 +42,7 @@ UIColor *SGAccentColor(void) {
 }
 
 NSString *SGAccentLabel(void) {
+    if (SGFlag(SGKeyAccentMatchArtwork, NO)) return @"Match cover art";
     NSInteger rgb = chosen();
     return rgb < 0 ? @"Spotify green" : [NSString stringWithFormat:@"#%06lX", (long)rgb];
 }
@@ -69,6 +78,7 @@ void SGPickAccent(void) {
 // A darker green than the token comes out as the accent darkened by the same amount, so the two
 // keep their relation.
 static BOOL swap(CGFloat *r, CGFloat *g, CGFloat *b) {
+    if (sg_accent < 0) return NO;   // no colour yet (Match cover art, first cover pending)
     for (size_t i = 0; i < sizeof(kGreens) / sizeof(kGreens[0]); i++) {
         CGFloat gr, gg, gb;
         unpack(kGreens[i], &gr, &gg, &gb);
@@ -167,5 +177,15 @@ static id swappedValue(id value) {
 %ctor {
     if (!SGNativeUI()) return;
     sg_accent = chosen();
-    if (sg_accent >= 0) %init;
+    BOOL match = SGFlag(SGKeyAccentMatchArtwork, NO);
+    // With the match on, the hooks are wanted even before any colour exists:
+    // the first cover to land sets the swap through the notification.
+    if (sg_accent >= 0 || match) %init;
+    if (match) {
+        SGArtworkPaletteStart();
+        [[NSNotificationCenter defaultCenter]
+            addObserverForName:SGArtworkPaletteChangedNotification object:nil
+                         queue:NSOperationQueue.mainQueue
+                    usingBlock:^(NSNotification *note) { sg_accent = chosen(); }];
+    }
 }

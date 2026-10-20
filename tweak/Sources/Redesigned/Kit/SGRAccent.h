@@ -3,6 +3,8 @@
 #import <UIKit/UIKit.h>
 
 #define SGRKeyAccent @"spotifyglass.redesign.accent"   // 0xRRGGBB
+// The accent follows the playing song's cover instead (personal fork).
+#define SGRKeyAccentMatchArtwork @"spotifyglass.redesign.accent.matchArtwork"
 
 UIColor *SGRAccentColor(void);   // nil while Spotify's own green is kept
 NSString *SGRAccentLabel(void);  // "#RRGGBB", or the name of Spotify's own

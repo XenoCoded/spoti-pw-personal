@@ -255,7 +255,8 @@ static void tick(void) {
     NSString *prev = index > 0 ? SGKaraokeLineText(lines[index - 1]) : @"";
     NSString *next = index + 1 < (NSInteger)lines.count ? SGKaraokeLineText(lines[index + 1]) : @"";
     SGKaraokeLine *line = index >= 0 ? lines[index] : nil;
-    SPTPlayerTrack *track = SGKaraokePlayer().state.track;
+    id<SPTPlayer> player = SGKaraokePlayer();
+    SPTPlayerTrack *track = player.state.track;
     NSString *title = track.trackTitle ?: @"", *artist = track.artistName ?: @"";
     NSInteger style = SGInt(SGKeyLyricArtworkStyle, SGLyricArtworkAura);
     MPMediaItemArtwork *cover;

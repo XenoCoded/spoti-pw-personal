@@ -27,7 +27,7 @@ static BOOL paletteFromImage(UIImage *image, uint32_t *out) {
     uint8_t pixels[24 * 24 * 4];
     CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
     CGContextRef context = CGBitmapContextCreate(pixels, 24, 24, 8, 24 * 4, space,
-                                                 kCGImageAlphaPremultipliedLast);
+                                                 (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
     CGColorSpaceRelease(space);
     if (!context) return NO;
     CGContextDrawImage(context, CGRectMake(0, 0, thumb.width, thumb.height), image.CGImage);

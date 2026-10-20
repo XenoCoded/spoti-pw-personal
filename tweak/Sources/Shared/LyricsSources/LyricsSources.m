@@ -148,7 +148,8 @@ NSArray<SGLyricsProvider *> *SGLyricsAllProviders(void) {
             provider.detail = detail;
             // A source that matches by Spotify's own track id has everything it needs from the
             // start; the rest wait for the player to name the track before they can search.
-            provider.needsName = ![key isEqualToString:@"musixmatch"];
+            // The cache keys by track id alone, like Musixmatch: it has nothing to search with.
+            provider.needsName = ![key isEqualToString:@"musixmatch"] && ![key isEqualToString:@"cache"];
             provider.ask = ask;
             return provider;
         };
@@ -159,6 +160,7 @@ NSArray<SGLyricsProvider *> *SGLyricsAllProviders(void) {
             make(@"netease", @"NetEase", @"Word timing, censored", SGNetEaseAsk),
             make(@"lrclib", @"LRCLIB", @"Line timing, open fallback", SGLrcLibAsk),
             make(@"qq", @"QQ Music", @"Line timing, Chinese catalogue", SGQQMusicAsk),
+            make(@"cache", @"On this phone", @"Already fetched, kept for offline", SGLyricsCacheAsk),
         ];
     });
     return all;
@@ -311,6 +313,11 @@ static void finish(SGLyricsWalk *walk) {
     if (lyrics || (everyoneAsked && !failed) || merged.instrumental) {
         if (sg_kept.count >= kKeptTracks) [sg_kept removeAllObjects];
         sg_kept[trackID] = lyrics ?: NSNull.null;
+        // What a walk fetched is kept on the phone too (personal fork), unless it
+        // came from the phone in the first place.
+        if (lyrics.karaokeLines.count && ![lyrics.provider isEqualToString:@"cache"]) {
+            SGLyricsCacheSave(trackID, lyrics);
+        }
         if (!lyrics) {
             @synchronized (sg_missing) { [sg_missing addObject:trackID]; }
         }

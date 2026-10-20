@@ -128,5 +128,10 @@ extern SGLyricsAsk SGUnisonAsk;
 extern SGLyricsAsk SGNetEaseAsk;
 extern SGLyricsAsk SGLrcLibAsk;
 extern SGLyricsAsk SGQQMusicAsk;
+// The offline cache (personal fork): asked last, it answers with what a walk
+// already fetched and kept on the phone.
+extern SGLyricsAsk SGLyricsCacheAsk;
+// Keeps a finished walk's answer for the cache; called by the chain's finish.
+void SGLyricsCacheSave(NSString *trackID, SGLyricsResult *result);
 
 UIViewController *SGLyricsSourcesPage(void);   // the ordered list on the Lyrics page

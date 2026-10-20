@@ -45,9 +45,20 @@ jobs:
           python3 -m pip install --break-system-packages git+https://github.com/asdfzxcvbn/pyzule-rw.git
 
       - name: Download IPA
+        env:
+          IPA_URL: ${{ inputs.ipa_url }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p ipa
-          curl -fsSL "${{ inputs.ipa_url }}" -o ipa/spotify.ipa
+          # Personal fork: "gh-release:<tag>" fetches the IPA from this repo's
+          # own release assets (the ipa-host release), so a build no longer
+          # depends on an external file host staying up.
+          if [[ "$IPA_URL" == gh-release:* ]]; then
+            gh release download "${IPA_URL#gh-release:}" --repo "$GITHUB_REPOSITORY" --pattern "*.ipa" --dir ipa
+            mv ipa/*.ipa ipa/spotify.ipa
+          else
+            curl -fsSL "$IPA_URL" -o ipa/spotify.ipa
+          fi
           case "$(file --mime-type -b ipa/spotify.ipa)" in application/zip|application/x-ios-app) ;; *) echo "::error::Not an IPA"; exit 1 ;; esac
 
       - run: make release

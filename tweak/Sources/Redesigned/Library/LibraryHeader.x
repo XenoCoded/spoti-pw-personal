@@ -1,6 +1,7 @@
 // Library redesign: the header of Your Library and of a folder inside it, the way Home and Search have theirs
-// (Redesigned/Home/HomeHeader.x, Redesigned/Search/SearchPage.x). A large title at the leading edge, the avatar
-// that opens the side drawer at the trailing edge, and the scrim Spotify lays behind the header gone, the soft
+// (Redesigned/Home/HomeHeader.x, Redesigned/Search/SearchPage.x). A large title at the leading edge, the
+// controls at the trailing edge (the avatar gone altogether in this fork, see placeRoot), and the scrim
+// Spotify lays behind the header gone, the soft
 // scroll edge (Kit/SGREdgeEffect.x) being what keeps the header clear of the list scrolling under it.
 //
 // The filter chips under the row stay Spotify's, untouched. They were taken out when the redesign was first
@@ -177,8 +178,12 @@ static BOOL isFace(UIView *view) {
     return faceClass && [view isKindOfClass:faceClass];
 }
 
-// The root header's controls at its trailing edge, the avatar last, and the title before them. Answers what it
+// The root header's controls at its trailing edge and the title before them. Answers what it
 // placed in the order it reads, nothing while the header has no control laid out.
+// Personal fork: the avatar is not among them — it goes altogether. On the device this
+// fork is built for it never made the trip to the trailing edge and sat at the leading
+// one under the title instead; and it is not needed here, the side drawer (and with it
+// the profile) opens with a swipe from Home.
 static NSArray<UIView *> *placeRoot(UIView *header) {
     UIView *spotifyTitle = SGRFindByIdentifier(header, @"YourLibraryHeader.title", &kHeaderTitleKey);
     vanish(spotifyTitle);
@@ -190,7 +195,7 @@ static NSArray<UIView *> *placeRoot(UIView *header) {
     SGForEachView(header, ^(UIView *view) {
         if (!face && isFace(view) && view.bounds.size.width > 1) face = view;
     });
-    if (face) [trailing addObject:face];
+    vanish(face);
     if (!trailing.count) return trailing;
 
     CGFloat leading = placeTrailing(header, trailing);
@@ -233,12 +238,11 @@ static void layoutRoot(UIView *page) {
 
     // The first pass that laid the header out, not the first pass at all: a page appearing lays out before
     // its controls have a size, and a line off that pass would say the header was left as Spotify's.
-    UIView *face = isFace(trailing.lastObject) ? trailing.lastObject : nil;
     static BOOL logged;
-    if (!logged && header.window && face) {
+    if (!logged && header.window) {
         logged = YES;
-        SGLog(@"redesign library: header %@, %lu controls at the trailing edge, avatar %@, chips %@",
-              NSStringFromCGRect(header.frame), (unsigned long)trailing.count, face ? @"found" : @"not found",
+        SGLog(@"redesign library: header %@, %lu controls at the trailing edge, avatar removed, chips %@",
+              NSStringFromCGRect(header.frame), (unsigned long)trailing.count,
               childNamed(header, @"YourLibraryHeaderContentFiltersView") ? @"Spotify's" : @"not found");
     }
 }

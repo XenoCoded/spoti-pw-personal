@@ -11,8 +11,12 @@ UIViewController *SGLiveActivitySettingsPage(void) {
     SGModRow *on = SGOptionRow(@"Live Activity", nil, SGKeyLiveActivity);
     on.changed = ^(BOOL value) { SGSetLiveActivityEnabled(value); };
     SGModRow *view = SGChoiceRow(@"Shows", nil, SGKeyLiveActivityView, viewNames(), SGLiveActivityLyrics);
+    SGModRow *idle = SGChoiceRow(@"After pausing", @"Ends the activity instead of leaving it on the lock screen until the system expires it.",
+                                 SGKeyLiveActivityIdleEnd,
+                                 @[@"End after 5 minutes", @"End after 1 minute", @"Keep showing"],
+                                 SGLiveActivityIdleEnd5Min);
     return [[SGModPage alloc] initWithTitle:@"Live Activity" intro:nil sections:@[
-        SGSection(nil, @[on, view]),
+        SGSection(nil, @[on, view, idle]),
     ] footer:nil];
 }
 

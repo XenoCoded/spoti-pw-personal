@@ -24,6 +24,8 @@
 #define SGKeyLiveActivity @"spotifyglass.liveActivity"
 // Which view it shows, the index into the page's list.
 #define SGKeyLiveActivityView @"spotifyglass.liveActivity.view"
+// What happens while nothing plays, SGLiveActivityIdleEnd's values.
+#define SGKeyLiveActivityIdleEnd @"spotifyglass.liveActivity.idleEnd"
 // What the keys were called while this was the redesign's alone; LiveActivity.x's %ctor moves them over.
 #define SGKeyLiveActivityWas @"spotifyglass.redesign.liveActivity"
 #define SGKeyLiveActivityViewWas @"spotifyglass.redesign.liveActivity.view"
@@ -32,6 +34,15 @@ typedef NS_ENUM(NSInteger, SGLiveActivityView) {
     SGLiveActivityLyrics = 0,
     SGLiveActivityQueue,
     SGLiveActivityPanel,   // the control menu
+};
+
+// How long a paused or trackless player keeps its activity before the mod ends it.
+// Personal fork: upstream left the activity up until the system expired it (8 h), so a
+// card outlived the listening that started it, looking live the whole time.
+typedef NS_ENUM(NSInteger, SGLiveActivityIdleEnd) {
+    SGLiveActivityIdleEnd5Min = 0,
+    SGLiveActivityIdleEnd1Min,
+    SGLiveActivityIdleEndNever,
 };
 
 // From the switch: starts following the player (and the activity, the app being in front) or ends both.

@@ -16,7 +16,8 @@ API_AVAILABLE(ios(17.0))
 + (void)showWithView:(NSInteger)view paused:(BOOL)paused line:(NSString *)line nextLine:(NSString *)nextLine
               titles:(NSArray<NSString *> *)titles artists:(NSArray<NSString *> *)artists uris:(NSArray<NSString *> *)uris
                  tab:(NSInteger)tab title:(NSString *)title artist:(NSString *)artist shuffle:(BOOL)shuffle repeatMode:(NSInteger)repeatMode
-            timerEnd:(NSDate *)timerEnd timerEndOfTrack:(BOOL)timerEndOfTrack;
+            timerEnd:(NSDate *)timerEnd timerEndOfTrack:(BOOL)timerEndOfTrack
+         positionSec:(double)positionSec durationSec:(double)durationSec;
 + (void)end;
 @end
 
@@ -52,6 +53,20 @@ static SGLiveActivityTab sg_tab;
 // The sleep timer: an end, or the end of the track it was set on.
 static NSDate *sg_sleepEnd;
 static NSString *sg_sleepTrack;
+// Idle end (personal fork): since when the player has been paused or trackless, and
+// whether the activity was already ended for it, so a still-paused player is not
+// restarted by the next tick only to be ended again.
+static NSDate *sg_idleSince;
+static BOOL sg_idleEnded;
+
+// Seconds a paused or trackless player keeps its activity; 0 keeps it for good.
+static NSTimeInterval idleLimit(void) {
+    switch (SGInt(SGKeyLiveActivityIdleEnd, SGLiveActivityIdleEnd5Min)) {
+        case SGLiveActivityIdleEnd1Min: return 60;
+        case SGLiveActivityIdleEndNever: return 0;
+        default: return 5 * 60;
+    }
+}
 
 static void tick(void) API_AVAILABLE(ios(17.0));
 
@@ -151,7 +166,25 @@ static void tick(void) API_AVAILABLE(ios(17.0)) {
     id<SPTPlayer> player = SGKaraokePlayer();
     SPTPlayerState *state = player.state;
     SPTPlayerTrack *track = state.track;
+    // Idle end: a paused or trackless player starts a clock; past the limit its
+    // activity is ended instead of sitting on the lock screen until the system
+    // expires it. Playing again clears both the clock and the latch.
+    if (!track.trackTitle.length || state.isPaused) {
+        if (!sg_idleSince) sg_idleSince = [NSDate date];
+    } else {
+        sg_idleSince = nil;
+        sg_idleEnded = NO;
+    }
+    NSTimeInterval limit = idleLimit();
+    if (limit > 0 && sg_idleSince && -sg_idleSince.timeIntervalSinceNow >= limit
+        && SGLiveActivityBridge.isShowing) {
+        [SGLiveActivityBridge end];
+        sg_shown = nil;
+        sg_idleEnded = YES;
+        SGLog(@"live activity: ended after %.0f s idle", -sg_idleSince.timeIntervalSinceNow);
+    }
     if (!track.trackTitle.length) return;
+    if (sg_idleEnded && state.isPaused) return;
     NSString *trackID = SGKaraokePlayingTrack();
     checkSleepTimer(player, state, trackID);
 
@@ -174,21 +207,29 @@ static void tick(void) API_AVAILABLE(ios(17.0)) {
     }
 
     BOOL panel = view == SGLiveActivityPanel;
-    NSString *title = panel ? track.trackTitle : @"", *artist = panel ? track.artistName ?: @"" : @"";
+    // Title and artist ride along in every view now (personal fork): the lyrics view's
+    // header row and progress bar are drawn from the same state as the control menu's.
+    NSString *title = track.trackTitle, *artist = track.artistName ?: @"";
     BOOL shuffle = panel && state.options.shufflingContext;
     NSInteger repeatMode = panel ? repeatModeOf(state.options) : 0;
     NSInteger tab = panel ? sg_tab : 0;
     NSDate *sleepEnd = sg_sleepEnd;
     BOOL endOfTrack = sg_sleepTrack != nil;
+    // The progress bar's numbers: the karaoke clock is the position every other part of
+    // the mod reads, and the state's duration is in seconds (checkSleepTimer's maths).
+    double duration = [state respondsToSelector:@selector(duration)] ? state.duration : 0;
+    NSInteger positionMs = SGKaraokePositionMs();
+    double position = positionMs >= 0 ? positionMs / 1000.0 : 0;
 
     NSMutableArray<NSString *> *parts = [NSMutableArray arrayWithObjects:@(view).stringValue, paused ? @"1" : @"0", line, next,
         @(tab).stringValue, title, artist, shuffle ? @"1" : @"0", @(repeatMode).stringValue,
-        @((long long)sleepEnd.timeIntervalSince1970).stringValue, endOfTrack ? @"1" : @"0", nil];
+        @((long long)sleepEnd.timeIntervalSince1970).stringValue, endOfTrack ? @"1" : @"0", @((long long)duration).stringValue, nil];
     for (NSUInteger i = 0; i < titles.count; i++) [parts addObject:[NSString stringWithFormat:@"%@\t%@\t%@", titles[i], artists[i], uris[i]]];
     send([parts componentsJoinedByString:@"\n"], ^{
         [SGLiveActivityBridge showWithView:view paused:paused line:line nextLine:next titles:titles artists:artists uris:uris
                                         tab:tab title:title artist:artist shuffle:shuffle repeatMode:repeatMode
-                                   timerEnd:sleepEnd timerEndOfTrack:endOfTrack];
+                                   timerEnd:sleepEnd timerEndOfTrack:endOfTrack
+                                 positionSec:position durationSec:duration];
     });
 }
 
@@ -260,6 +301,8 @@ void SGSetLiveActivityEnabled(BOOL on) {
         sg_timer = nil;
         sg_shown = nil;
         sg_lastStart = nil;
+        sg_idleSince = nil;
+        sg_idleEnded = NO;
         clearSleepTimer();
         if (!on) {
             [SGLiveActivityBridge end];

@@ -39,6 +39,12 @@ struct SGLyricsAttributes: ActivityAttributes {
         var repeatMode: Int   // 0 off, 1 the playlist or album, 2 the track
         var timerEnd: Date?   // the sleep timer's end, nil when none is set
         var timerEndOfTrack: Bool
+        // The progress bar (personal fork): where the track was when this state was
+        // sent, how long it runs, and when it was sent, so the widget can walk the
+        // bar on its own between updates instead of needing one every second.
+        var positionSec: Double = 0
+        var durationSec: Double = 0
+        var sentAt: Date = Date(timeIntervalSince1970: 0)
     }
 }
 

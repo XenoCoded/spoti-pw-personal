@@ -104,20 +104,64 @@ private struct ContentView: View {
 private struct LyricsView: View {
     let state: State
 
+    // Personal fork: the view fills the lock screen's 160 pt as far as it goes — a
+    // track row, the line a size up from upstream's, the next line, and a progress
+    // bar that walks itself between the tweak's updates.
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 5) {
+            if !state.title.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: state.paused ? "pause.fill" : "waveform")
+                        .font(.caption)
+                        .foregroundStyle(green)
+                    Text(state.title)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                    if !state.artist.isEmpty {
+                        Text(state.artist)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.5))
+                            .lineLimit(1)
+                    }
+                }
+            }
             Text(state.line)
-                .font(.title3.weight(.bold))
+                .font(.title2.weight(.bold))
                 .lineLimit(2)
-                .minimumScaleFactor(0.8)
+                .minimumScaleFactor(0.85)
                 .direction(of: state.line)
             if !state.nextLine.isEmpty {
                 Text(state.nextLine)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.45))
                     .lineLimit(1)
                     .direction(of: state.nextLine)
             }
+            if state.durationSec > 0 {
+                ProgressBar(state: state)
+            }
+        }
+    }
+}
+
+// The bar: the state carries where the track was when it was sent and when, so the
+// bar advances a second at a time from there while the song plays, and holds still
+// while it is paused. Updates arrive per line change, which re-anchors it.
+private struct ProgressBar: View {
+    let state: State
+
+    var body: some View {
+        TimelineView(.periodic(from: state.sentAt, by: 1)) { _ in
+            let elapsed = state.paused ? 0 : max(0, Date().timeIntervalSince(state.sentAt))
+            let position = min(state.durationSec, max(0, state.positionSec + elapsed))
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.18))
+                    Capsule().fill(green)
+                        .frame(width: geo.size.width * CGFloat(position / state.durationSec))
+                }
+            }
+            .frame(height: 4)
         }
     }
 }

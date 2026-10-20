@@ -1831,7 +1831,8 @@ static void clearArtwork(void) {
 // Live Activity reads its up-next from.
 static NSString *sg_prefetched;
 static void prefetchNext(void) {
-    SPTPlayerState *state = SGKaraokePlayer().state;
+    id<SPTPlayer> player = SGKaraokePlayer();
+    SPTPlayerState *state = player.state;
     id future = [state respondsToSelector:@selector(future)] ? state.future : nil;
     if (![future isKindOfClass:NSArray.class]) return;
     for (id candidate in (NSArray *)future) {

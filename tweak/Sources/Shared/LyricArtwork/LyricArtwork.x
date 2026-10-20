@@ -1548,6 +1548,9 @@ static BOOL styleAnimates(NSInteger style) {
         case SGLyricArtworkMatrix:
         case SGLyricArtworkStickers:
         case SGLyricArtworkRGBSplit:
+        case SGLyricArtworkOldTV:
+        case SGLyricArtworkHolo:
+        case SGLyricArtworkStarburst:
             return YES;
         default:
             return NO;
@@ -1643,6 +1646,36 @@ static void offerClip(NSString *lineKey, NSInteger style, SGKaraokeLine *line,
         });
 }
 
+// Warm the clips of the lines ahead (Batch 11): rendering is the slow part of
+// an animated line change, so the next two lines render while this one plays
+// and the change itself is instant. The render queue is serial and the line
+// being sung was asked first, so warming never jumps the queue.
+static void warmClips(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSInteger index, NSInteger style,
+                      MPMediaItemArtwork *cover, NSString *title, NSString *artist, double duration) {
+    if (!SGFlag(SGKeyLyricArtworkAnimated, NO) || !SGAnimatedArtworkAvailable() || !styleAnimates(style)) return;
+    UIImage *coverImage = nil;
+    for (NSInteger ahead = 1; ahead <= 2; ahead++) {
+        NSInteger j = index + ahead;
+        if (j < 0 || j >= (NSInteger)lines.count) continue;
+        NSString *clipKey = [NSString stringWithFormat:@"%@/%ld-%ld", trackID, (long)j, (long)style];
+        if (SGLyricClipCachedFile(clipKey)) continue;
+        if (!coverImage) coverImage = cover ? [cover imageWithSize:CGSizeMake(720, 960)] : nil;
+        NSString *jPrev = j > 0 ? SGKaraokeLineText(lines[j - 1]) : @"";
+        NSString *jCurrent = SGKaraokeLineText(lines[j]);
+        NSString *jNext = j + 1 < (NSInteger)lines.count ? SGKaraokeLineText(lines[j + 1]) : @"";
+        SGKaraokeLine *jLine = lines[j];
+        NSInteger jPrevStart = j > 0 ? lines[j - 1].start : 0;
+        NSInteger jNextStart = j + 1 < (NSInteger)lines.count ? lines[j + 1].start : 0;
+        NSInteger count = lines.count;
+        SGLyricClipRender(clipKey, CGSizeMake(720, 960), 20, clipSeconds(style, jLine),
+            ^UIImage *(double t) {
+                return drawClipFrame(style, CGSizeMake(720, 960), jPrev, jCurrent, jNext, coverImage, jLine,
+                                     title, artist, j, count, jPrevStart, jNextStart, duration, t);
+            },
+            ^(NSURL *file) {});
+    }
+}
+
 // Spotify's info again, so the system picks up the still that has just been drawn; this
 // feature's own hook below puts the still in on the way out.
 static void resend(void) {
@@ -1714,6 +1747,7 @@ static void tick(void) {
         }];
     offerClip(key, style, line, prev, current, next, cover, title, artist,
               lineIndex, lineCount, prevStart, nextStart, duration);
+    warmClips(trackID, lines, index, style, cover, title, artist, duration);
     SGLog(@"lyric artwork: %@ — %@", trackID, current);
     resend();
 }

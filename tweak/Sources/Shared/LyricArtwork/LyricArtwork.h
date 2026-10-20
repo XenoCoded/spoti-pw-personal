@@ -7,6 +7,8 @@
 #define SGKeyLyricArtwork @"spotifyglass.lyricArtwork"
 // The styles that move, as a looping clip instead of a still (Batch 8, iOS 26).
 #define SGKeyLyricArtworkAnimated @"spotifyglass.lyricArtwork.animated"
+// Clip quality: 0 Saver, 1 Balanced, 2 Max (Batch 18).
+#define SGKeyLyricArtworkClipQuality @"spotifyglass.lyricArtwork.clipQuality"
 // Which drawing, SGLyricArtworkStyle's values.
 #define SGKeyLyricArtworkStyle @"spotifyglass.lyricArtwork.style"
 

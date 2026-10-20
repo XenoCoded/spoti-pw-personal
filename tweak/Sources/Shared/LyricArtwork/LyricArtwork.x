@@ -18,6 +18,7 @@
 #import "LyricClip.h"
 #import "Shared/LockScreenArtwork/LockScreenArtwork.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/Player/PlayerState.h"
 
 static NSObject *sg_lock;
 // The frame clock for clip renders: seconds into the line being drawn, or -1
@@ -1634,6 +1635,16 @@ static UIImage *drawLyricArtwork(CGSize size, NSString *prev, NSString *current,
 // The styles that move, and how long a loop each wants: the ambient ones loop
 // every three seconds; the sweep styles take their line's own length, so the
 // words fill at the speed they are sung.
+// The clip's size and rate, from the quality choice: Saver for the battery,
+// Max for the full 900x1200 the stills use, Balanced between.
+static void clipSpec(CGSize *size, NSInteger *fps) {
+    switch (SGInt(SGKeyLyricArtworkClipQuality, 1)) {
+        case 0: *size = CGSizeMake(540, 720); *fps = 15; break;
+        case 2: *size = CGSizeMake(900, 1200); *fps = 24; break;
+        default: *size = CGSizeMake(720, 960); *fps = 20; break;
+    }
+}
+
 static BOOL styleAnimates(NSInteger style) {
     switch (style) {
         case SGLyricArtworkPoster:
@@ -1720,14 +1731,16 @@ static void offerClip(NSString *lineKey, NSInteger style, SGKaraokeLine *line,
                       MPMediaItemArtwork *cover, NSString *title, NSString *artist,
                       NSInteger index, NSInteger count, NSInteger prevStart, NSInteger nextStart,
                       double duration) {
-    if (!SGFlag(SGKeyLyricArtworkAnimated, NO) || !SGAnimatedArtworkAvailable() || !styleAnimates(style)) {
+    if (!SGFlag(SGKeyLyricArtworkAnimated, NO) || !SGAnimatedArtworkAvailable() || !styleAnimates(style)
+        || UIAccessibilityIsReduceMotionEnabled()) {
         if (sg_clipArtwork) {
             sg_clipArtwork = nil;
             sg_clipFor = nil;
         }
         return;
     }
-    NSString *clipKey = [NSString stringWithFormat:@"%@-%ld", lineKey, (long)style];
+    NSString *clipKey = [NSString stringWithFormat:@"%@-%ld-%ld", lineKey, (long)style,
+                         (long)SGInt(SGKeyLyricArtworkClipQuality, 1)];
     if ([clipKey isEqualToString:sg_clipFor]) return;
     sg_clipFor = clipKey;
     sg_clipArtwork = nil;
@@ -1745,10 +1758,13 @@ static void offerClip(NSString *lineKey, NSInteger style, SGKaraokeLine *line,
         publish(cached);
         return;
     }
-    UIImage *coverImage = cover ? [cover imageWithSize:CGSizeMake(720, 960)] : nil;
-    SGLyricClipRender(clipKey, CGSizeMake(720, 960), 20, clipSeconds(style, line),
+    CGSize specSize;
+    NSInteger specFps;
+    clipSpec(&specSize, &specFps);
+    UIImage *coverImage = cover ? [cover imageWithSize:specSize] : nil;
+    SGLyricClipRender(clipKey, specSize, specFps, clipSeconds(style, line),
         ^UIImage *(double t) {
-            return drawClipFrame(style, CGSizeMake(720, 960), prev, current, next, coverImage, line,
+            return drawClipFrame(style, specSize, prev, current, next, coverImage, line,
                                  title, artist, index, count, prevStart, nextStart, duration, t);
         },
         ^(NSURL *file) {
@@ -1762,14 +1778,19 @@ static void offerClip(NSString *lineKey, NSInteger style, SGKaraokeLine *line,
 // being sung was asked first, so warming never jumps the queue.
 static void warmClips(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSInteger index, NSInteger style,
                       MPMediaItemArtwork *cover, NSString *title, NSString *artist, double duration) {
-    if (!SGFlag(SGKeyLyricArtworkAnimated, NO) || !SGAnimatedArtworkAvailable() || !styleAnimates(style)) return;
+    if (!SGFlag(SGKeyLyricArtworkAnimated, NO) || !SGAnimatedArtworkAvailable() || !styleAnimates(style)
+        || UIAccessibilityIsReduceMotionEnabled()) return;
+    CGSize specSize;
+    NSInteger specFps;
+    clipSpec(&specSize, &specFps);
     UIImage *coverImage = nil;
     for (NSInteger ahead = 1; ahead <= 2; ahead++) {
         NSInteger j = index + ahead;
         if (j < 0 || j >= (NSInteger)lines.count) continue;
-        NSString *clipKey = [NSString stringWithFormat:@"%@/%ld-%ld", trackID, (long)j, (long)style];
+        NSString *clipKey = [NSString stringWithFormat:@"%@/%ld-%ld-%ld", trackID, (long)j, (long)style,
+                             (long)SGInt(SGKeyLyricArtworkClipQuality, 1)];
         if (SGLyricClipCachedFile(clipKey)) continue;
-        if (!coverImage) coverImage = cover ? [cover imageWithSize:CGSizeMake(720, 960)] : nil;
+        if (!coverImage) coverImage = cover ? [cover imageWithSize:specSize] : nil;
         NSString *jPrev = j > 0 ? SGKaraokeLineText(lines[j - 1]) : @"";
         NSString *jCurrent = SGKaraokeLineText(lines[j]);
         NSString *jNext = j + 1 < (NSInteger)lines.count ? SGKaraokeLineText(lines[j + 1]) : @"";
@@ -1777,9 +1798,9 @@ static void warmClips(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSInte
         NSInteger jPrevStart = j > 0 ? lines[j - 1].start : 0;
         NSInteger jNextStart = j + 1 < (NSInteger)lines.count ? lines[j + 1].start : 0;
         NSInteger count = lines.count;
-        SGLyricClipRender(clipKey, CGSizeMake(720, 960), 20, clipSeconds(style, jLine),
+        SGLyricClipRender(clipKey, specSize, specFps, clipSeconds(style, jLine),
             ^UIImage *(double t) {
-                return drawClipFrame(style, CGSizeMake(720, 960), jPrev, jCurrent, jNext, coverImage, jLine,
+                return drawClipFrame(style, specSize, jPrev, jCurrent, jNext, coverImage, jLine,
                                      title, artist, j, count, jPrevStart, jNextStart, duration, t);
             },
             ^(NSURL *file) {});
@@ -1804,7 +1825,32 @@ static void clearArtwork(void) {
     resend();
 }
 
+// The next track's lyrics, fetched while this one still plays (Batch 18):
+// when the skip lands, its lines — and with them its first clips — are
+// already here. The queue is the player state's `future`, the same list the
+// Live Activity reads its up-next from.
+static NSString *sg_prefetched;
+static void prefetchNext(void) {
+    SPTPlayerState *state = SGKaraokePlayer().state;
+    id future = [state respondsToSelector:@selector(future)] ? state.future : nil;
+    if (![future isKindOfClass:NSArray.class]) return;
+    for (id candidate in (NSArray *)future) {
+        if (![candidate isKindOfClass:objc_getClass("SPTPlayerTrack")]) continue;
+        NSString *uri = SGURIString(((SPTPlayerTrack *)candidate).URI);
+        if (![uri hasPrefix:@"spotify:track:"]) continue;
+        NSString *nextID = [uri substringFromIndex:14];
+        if ([nextID isEqualToString:sg_prefetched]) return;
+        sg_prefetched = nextID;
+        if (!SGKaraokeLinesForTrack(nextID)) {
+            SGKaraokeRequestLyrics(nextID);
+            SGLog(@"lyric artwork: prefetched the next track's lyrics");
+        }
+        return;
+    }
+}
+
 static void tick(void) {
+    prefetchNext();
     NSString *trackID = SGKaraokePlayingTrack();
     NSArray<SGKaraokeLine *> *lines = trackID ? SGKaraokeLinesForTrack(trackID) : nil;
     if (!lines) {

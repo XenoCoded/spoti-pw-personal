@@ -20,6 +20,22 @@ static NSString *cacheDirectory(void) {
     return directory;
 }
 
+unsigned long long SGLyricsCacheBytes(void) {
+    unsigned long long total = 0;
+    for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:cacheDirectory() error:nil]) {
+        NSDictionary *attrs = [NSFileManager.defaultManager attributesOfItemAtPath:
+            [cacheDirectory() stringByAppendingPathComponent:name] error:nil];
+        total += [attrs[NSFileSize] unsignedLongLongValue];
+    }
+    return total;
+}
+
+void SGLyricsCacheClear(void) {
+    for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:cacheDirectory() error:nil]) {
+        [NSFileManager.defaultManager removeItemAtPath:[cacheDirectory() stringByAppendingPathComponent:name] error:nil];
+    }
+}
+
 static NSString *pathFor(NSString *trackID) {
     // A track id is base62, but the file name does not take the chain's word for it.
     NSString *safe = [trackID stringByReplacingOccurrencesOfString:@"/" withString:@"_"];

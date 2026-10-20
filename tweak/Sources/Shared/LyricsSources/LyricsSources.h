@@ -133,5 +133,7 @@ extern SGLyricsAsk SGQQMusicAsk;
 extern SGLyricsAsk SGLyricsCacheAsk;
 // Keeps a finished walk's answer for the cache; called by the chain's finish.
 void SGLyricsCacheSave(NSString *trackID, SGLyricsResult *result);
+unsigned long long SGLyricsCacheBytes(void);
+void SGLyricsCacheClear(void);
 
 UIViewController *SGLyricsSourcesPage(void);   // the ordered list on the Lyrics page

@@ -1294,16 +1294,24 @@ static void drawStarburst(SGWCtx *c) {
 
 // Print: newsprint — the cover as halftone dots dissolving into paper, a red
 // tag, and the line in serif over black marker bars.
+static UIImage *halftoneOf(UIImage *cover) {
+    static UIImage *memo, *memoFor;
+    if (memo && memoFor == cover) return memo;
+    CIFilter *dots = [CIFilter filterWithName:@"CIDotScreen"];
+    [dots setValue:[CIImage imageWithCGImage:cover.CGImage] forKey:kCIInputImageKey];
+    [dots setValue:@(6.0) forKey:@"inputWidth"];
+    [dots setValue:@(0.75) forKey:@"inputSharpness"];
+    memo = ciResult(cover, dots);
+    memoFor = cover;
+    return memo;
+}
+
 static void drawPrint(SGWCtx *c) {
     CGSize size = c->size;
     fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithRed:0.80 green:0.78 blue:0.72 alpha:1]);
     if (c->cover) {
-        CIFilter *dots = [CIFilter filterWithName:@"CIDotScreen"];
-        [dots setValue:[CIImage imageWithCGImage:c->cover.CGImage] forKey:kCIInputImageKey];
-        [dots setValue:@(6.0) forKey:@"inputWidth"];
-        [dots setValue:@(0.75) forKey:@"inputSharpness"];
-        UIImage *halftone = ciResult(c->cover, dots);
-        if (halftone) drawCoverInRect(halftone, CGRectMake(0, 0, size.width, size.height * 0.55));
+        UIImage *halftone = halftoneOf(c->cover);
+        if (halftone) drawCoverInRect(halftone, breathingRect(CGRectMake(0, 0, size.width, size.height * 0.55), size.width * 0.015, size.width * 0.005));
         // The dissolve: paper colour gathered from the middle down.
         UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
         format.scale = 1;
@@ -1652,6 +1660,7 @@ static BOOL styleAnimates(NSInteger style) {
         case SGLyricArtworkMagazine:
         case SGLyricArtworkDuotone:
         case SGLyricArtworkGigPoster:
+        case SGLyricArtworkPrint:
             return YES;
         default:
             return NO;

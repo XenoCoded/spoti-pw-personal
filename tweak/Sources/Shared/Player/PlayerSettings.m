@@ -9,6 +9,8 @@
 #import "Shared/LiveActivity/LiveActivity.h"
 #import "Shared/LockScreenArtwork/LockScreenArtwork.h"
 #import "Shared/LyricArtwork/LyricArtwork.h"
+#import "Shared/LyricArtwork/LyricClip.h"
+#import "Shared/LyricsSources/LyricsSources.h"
 
 UIViewController *SGLockScreenSettingsPage(void) {
     NSMutableArray<SGModSection *> *sections = [NSMutableArray array];
@@ -17,6 +19,14 @@ UIViewController *SGLockScreenSettingsPage(void) {
     }
     [sections addObject:SGSection(@"Artwork", [[SGAnimatedArtworkRows() arrayByAddingObjectsFromArray:SGLyricArtworkRows()]
         arrayByAddingObject:SGFlagRow(@"Companion content", @"ios-feature-lockscreen.companion_content_enabled")])];
+    [sections addObject:SGSection(@"Storage", @[
+        SGStatActionRow(@"Animated clips", @"Rendered lyric clips kept on the phone. They render again if cleared.",
+            ^NSString *{ return [NSByteCountFormatter stringFromByteCount:(long long)SGLyricClipCacheBytes() countStyle:NSByteCountFormatterCountStyleFile]; },
+            ^{ SGLyricClipCacheClear(); }),
+        SGStatActionRow(@"Offline lyrics", @"Lyrics kept on the phone for offline play. They are fetched again if cleared.",
+            ^NSString *{ return [NSByteCountFormatter stringFromByteCount:(long long)SGLyricsCacheBytes() countStyle:NSByteCountFormatterCountStyleFile]; },
+            ^{ SGLyricsCacheClear(); }),
+    ])];
     [sections addObject:SGSection(@"Controls", @[
         SGFlagRow(@"Like and dislike buttons", @"ios-feature-lockscreen.like_dislike_enabled"),
         SGFlagRow(@"Skip button on podcasts", @"ios-feature-lockscreen.skip_button_on_podcasts"),

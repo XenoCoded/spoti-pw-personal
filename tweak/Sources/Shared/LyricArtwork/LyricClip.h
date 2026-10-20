@@ -6,6 +6,9 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
+// What the clip cache weighs, and emptying it (the Storage rows).
+unsigned long long SGLyricClipCacheBytes(void);
+void SGLyricClipCacheClear(void);
 // The cached clip for a key (track/line/style), or nil when none is rendered yet.
 NSURL *SGLyricClipCachedFile(NSString *key);
 // Renders a clip: frameAt is called on a background queue for each frame's time

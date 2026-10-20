@@ -59,6 +59,22 @@ static NSString *clipPath(NSString *key) {
     return [[clipDirectory() stringByAppendingPathComponent:safe] stringByAppendingPathExtension:@"mp4"];
 }
 
+unsigned long long SGLyricClipCacheBytes(void) {
+    unsigned long long total = 0;
+    for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:clipDirectory() error:nil]) {
+        NSDictionary *attrs = [NSFileManager.defaultManager attributesOfItemAtPath:
+            [clipDirectory() stringByAppendingPathComponent:name] error:nil];
+        total += [attrs[NSFileSize] unsignedLongLongValue];
+    }
+    return total;
+}
+
+void SGLyricClipCacheClear(void) {
+    for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:clipDirectory() error:nil]) {
+        [NSFileManager.defaultManager removeItemAtPath:[clipDirectory() stringByAppendingPathComponent:name] error:nil];
+    }
+}
+
 NSURL *SGLyricClipCachedFile(NSString *key) {
     NSString *path = clipPath(key);
     return [NSFileManager.defaultManager fileExistsAtPath:path] ? [NSURL fileURLWithPath:path] : nil;

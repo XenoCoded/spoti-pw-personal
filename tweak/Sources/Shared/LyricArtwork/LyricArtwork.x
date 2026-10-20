@@ -1909,6 +1909,62 @@ static void tick(void) {
     resend();
 }
 
+// A style drawn once with sample facts, for the picker's thumbnails: the
+// playing track's cover when one has been seen, else a painted stand-in — a
+// violet-to-amber gradient with a soft disc of light, song-shaped enough for
+// every style to show what it does.
+static UIImage *sampleCover(CGSize size) {
+    @synchronized (sg_lock) {
+        if (sg_cover) {
+            UIImage *real = [sg_cover imageWithSize:CGSizeMake(600, 600)];
+            if (real) return real;
+        }
+    }
+    static UIImage *painted;
+    if (painted) return painted;
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+    format.scale = 1;
+    format.opaque = YES;
+    painted = [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(600, 600) format:format]
+        imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        CGContextRef ctx = context.CGContext;
+        CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        NSArray *colors = @[(id)[UIColor colorWithRed:0.16 green:0.08 blue:0.35 alpha:1].CGColor,
+                            (id)[UIColor colorWithRed:0.85 green:0.35 blue:0.15 alpha:1].CGColor];
+        CGGradientRef gradient = CGGradientCreateWithColors(space, (__bridge CFArrayRef)colors, NULL);
+        CGContextDrawLinearGradient(ctx, gradient, CGPointMake(0, 0), CGPointMake(600, 600), 0);
+        CGGradientRelease(gradient);
+        CGColorSpaceRelease(space);
+        [[UIColor colorWithWhite:1 alpha:0.85] setFill];
+        [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(190, 140, 220, 220)] fill];
+        [[UIColor colorWithWhite:0 alpha:0.75] setFill];
+        UIRectFill(CGRectMake(0, 470, 600, 130));
+    }];
+    return painted;
+}
+
+UIImage *SGLyricArtworkSample(NSInteger style, CGSize size) {
+    NSString *prev = @"we were running out of time";
+    NSString *current = @"drive through the night with the windows down";
+    NSString *next = @"till the city turns to light";
+    NSString *title = @"Midnight Run";
+    NSString *artist = @"The Night Drivers";
+    UIImage *cover = sampleCover(size);
+    @synchronized (sg_lock) {
+        if (style == SGLyricArtworkRecord) {
+            return drawRecordArtwork(size, prev, current, next, cover, nil, title, artist);
+        }
+        if (style == SGLyricArtworkChat) {
+            return drawChatArtwork(size, prev, current, next, cover, title, artist);
+        }
+        if (style >= SGLyricArtworkTwitter) {
+            return drawWorkshopArtwork(style, size, prev, current, next, cover, nil, title, artist,
+                                       11, 38, 0, 0, 214);
+        }
+        return drawLyricArtwork(size, prev, current, next, style, cover, nil, title, artist);
+    }
+}
+
 %hook MPNowPlayingInfoCenter
 - (void)setNowPlayingInfo:(NSDictionary *)info {
     MPMediaItemArtwork *artwork;

@@ -267,6 +267,32 @@ static void layoutFolder(UIView *page) {
     }
 }
 
+// The avatar puts itself back (personal fork, Batch 4): vanishing it on the header's
+// passes was not enough — Spotify restores the face container's alpha when its
+// content lands, off the header's layout entirely, and the first build's removal
+// quietly undid itself. So the face is watched on its own passes too, and while it
+// stands in the library's header it stays vanished. The same class carries the
+// avatar on Home and Search, where it stays; only the header it stands in decides.
+static void vanishFaceInLibrary(UIView *face) {
+    for (UIView *v = face.superview; v; v = v.superview) {
+        if ([NSStringFromClass(v.class) containsString:@"YourLibraryHeaderView"]) {
+            vanish(face);
+            return;
+        }
+    }
+}
+
+%hook _TtC29ListeningActivity_ElementsKit21AdaptiveFaceContainer
+- (void)layoutSubviews {
+    %orig;
+    vanishFaceInLibrary((UIView *)self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    vanishFaceInLibrary((UIView *)self);
+}
+%end
+
 %hook _TtC28YourLibrary_YourLibraryXImpl15YourLibraryView
 - (void)layoutSubviews {
     %orig;

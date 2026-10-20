@@ -14,6 +14,7 @@
 #import "Shared/Haptics/Haptics.h"
 #import "Shared/LiveActivity/LiveActivity.h"
 #import "Shared/ListeningStats/ListeningStats.h"
+#import "Shared/Fonts/Fonts.h"
 #import "Redesigned/Lyrics/LyricsText.h"
 #import "Redesigned/Navbar/Navbar.h"
 #import "Redesigned/NowPlayingBar/NowPlayingBar.h"
@@ -49,10 +50,18 @@ static SGModRow *unavailableRow(void) {
     return SGWithSymbol(row, @"sparkles");
 }
 
+// A font of the user's own in place of Spotify's, either look (Shared/Fonts).
+static SGModRow *appFontRow(void) {
+    SGModRow *row = SGPageRow(@"App font", ^{ return SGAppFontSettingsPage(); });
+    row.value = ^NSString *{ return SGAppFontSummary(); };
+    return SGWithSymbol(row, @"textformat");
+}
+
 SGModSection *SGAppearanceSection(void) {
     if (!SGRedesignAvailable()) {
         NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObject:unavailableRow()];
         [rows addObjectsFromArray:SGNativeAppearanceRows()];
+        [rows addObject:appFontRow()];
         return SGNotedSection(@"Appearance", rows, @"Changes apply after you restart Spotify.");
     }
     SGModRow *redesign = SGOptionRow(@"Redesigned UI", nil, SGKeyRedesign);
@@ -64,6 +73,7 @@ SGModSection *SGAppearanceSection(void) {
     };
     NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObject:SGWithSymbol(redesign, @"sparkles")];
     [rows addObjectsFromArray:SGRedesignedUIStored() ? SGRAppearanceRows() : SGNativeAppearanceRows()];
+    [rows addObject:appFontRow()];
     return SGNotedSection(@"Appearance", rows, @"Changes apply after you restart Spotify.");
 }
 

@@ -5,7 +5,11 @@
 
 NSArray<SGModRow *> *SGLyricArtworkRows(void) {
     SGModRow *style = SGChoiceRow(@"Lyric artwork style", nil, SGKeyLyricArtworkStyle,
-                                  @[@"Poster", @"Plain & bold", @"Aura", @"Record", @"Chat", @"Gradient"],
+                                  @[@"Poster", @"Plain & bold", @"Aura", @"Record", @"Chat", @"Gradient",
+                                    @"Twitter", @"Cover in letters", @"Magazine", @"Duotone", @"Word collage",
+                                    @"Cyberpunk chat", @"Old TV", @"Matrix", @"Stickers", @"Receipt",
+                                    @"Gig poster", @"Holo", @"RGB split", @"Window", @"Starburst", @"Print",
+                                    @"Tiles", @"Polaroid", @"Subtitles", @"Line number"],
                                   SGLyricArtworkAura);
     style.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO); };
     return @[

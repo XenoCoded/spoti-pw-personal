@@ -45,6 +45,12 @@ struct SGLyricsAttributes: ActivityAttributes {
         var positionSec: Double = 0
         var durationSec: Double = 0
         var sentAt: Date = Date(timeIntervalSince1970: 0)
+        // When a paused player's idle end falls (personal fork). The app is suspended
+        // while paused in the background, so its own timer cannot end the activity
+        // then; the widget reads this instead and retires its own card when the
+        // moment passes, and the stale date is set to it as well. Nil while playing
+        // or when the activity is kept for good.
+        var dismissAt: Date? = nil
     }
 }
 

@@ -68,7 +68,7 @@ public final class SGLiveActivityBridge: NSObject {
                                   titles: [String], artists: [String], uris: [String],
                                   tab: Int, title: String, artist: String, shuffle: Bool, repeatMode: Int,
                                   timerEnd: Date?, timerEndOfTrack: Bool,
-                                  positionSec: Double, durationSec: Double) {
+                                  positionSec: Double, durationSec: Double, dismissAt: Date?) {
         let tracks = titles.indices.map {
             SGLyricsAttributes.Track(title: titles[$0], artist: artists[$0], uri: uris[$0])
         }
@@ -77,12 +77,15 @@ public final class SGLiveActivityBridge: NSObject {
             line: line, nextLine: nextLine, tracks: tracks,
             tab: SGLyricsAttributes.Tab(rawValue: tab) ?? .controls, title: title, artist: artist,
             shuffle: shuffle, repeatMode: repeatMode, timerEnd: timerEnd, timerEndOfTrack: timerEndOfTrack,
-            positionSec: positionSec, durationSec: durationSec, sentAt: Date())
-        // A rolling stale horizon (personal fork): updates land every line change while
-        // anything plays, so the date is only ever reached when the process is gone —
-        // the app closed, the phone rebooted — and then the system marks the card stale
-        // within minutes instead of presenting its last line as live for hours.
-        let content = ActivityContent(state: state, staleDate: Date(timeIntervalSinceNow: 15 * 60))
+            positionSec: positionSec, durationSec: durationSec, sentAt: Date(), dismissAt: dismissAt)
+        // The stale horizon (personal fork): while a paused player's idle end is armed
+        // it is the stale date, so the system itself marks the card stale at the very
+        // moment it should end — the app, suspended, cannot. Otherwise a rolling
+        // 15 minutes: updates land every line change while anything plays, so the date
+        // is only ever reached when the process is gone — the app closed, the phone
+        // rebooted — and then the system marks the card stale within minutes instead
+        // of presenting its last line as live for hours.
+        let content = ActivityContent(state: state, staleDate: dismissAt ?? Date(timeIntervalSinceNow: 15 * 60))
         if let activity = current {
             queue(.update(activity.id, content))
             return

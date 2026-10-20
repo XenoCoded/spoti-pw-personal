@@ -40,46 +40,83 @@ extension SGLyricsAttributes.Tab {
     }
 }
 
+// A card whose idle end has passed retires itself (personal fork): the state carries
+// the moment (ContentState.dismissAt), and past it every region renders nothing.
+// The app that would end the activity properly is suspended exactly when this
+// matters — paused, in the background — so the card puts itself away; the stale
+// date lands at the same moment, and the real end follows whenever Spotify next
+// wakes. Playing again sends a state with no deadline and the card is back.
+private struct Retiring<Content: View>: View {
+    let state: State
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if let dismissAt = state.dismissAt {
+            TimelineView(.periodic(from: dismissAt.addingTimeInterval(-120), by: 10)) { context in
+                if context.date >= dismissAt {
+                    EmptyView()
+                } else {
+                    content()
+                }
+            }
+        } else {
+            content()
+        }
+    }
+}
+
 struct SGLyricsLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: SGLyricsAttributes.self) { context in
-            ContentView(state: context.state, upNext: 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, context.state.view == .panel ? 12 : 16)
-                .padding(.vertical, 12)
-                .foregroundStyle(.white)
-                .activityBackgroundTint(Color.black.opacity(0.75))
-                .activitySystemActionForegroundColor(.white)
-                .widgetURL(URL(string: "spotify:"))
+            Retiring(state: context.state) {
+                ContentView(state: context.state, upNext: 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, context.state.view == .panel ? 12 : 16)
+                    .padding(.vertical, 12)
+            }
+            .foregroundStyle(.white)
+            .activityBackgroundTint(Color.black.opacity(0.75))
+            .activitySystemActionForegroundColor(.white)
+            .widgetURL(URL(string: "spotify:"))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.bottom) {
-                    Group {
-                        if context.state.view == .panel {
-                            Summary(state: context.state)
-                        } else {
-                            ContentView(state: context.state, upNext: 3)
+                    Retiring(state: context.state) {
+                        Group {
+                            if context.state.view == .panel {
+                                Summary(state: context.state)
+                            } else {
+                                ContentView(state: context.state, upNext: 3)
+                            }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 4)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 4)
                 }
             } compactLeading: {
-                Image(systemName: "music.note")
-                    .foregroundStyle(green)
-            } compactTrailing: {
-                if let end = context.state.timerEnd, end > Date() {
-                    Text(timerInterval: Date()...end, countsDown: true)
-                        .monospacedDigit()
-                        .foregroundStyle(green)
-                        .frame(maxWidth: 44)
-                } else {
-                    Image(systemName: context.state.paused ? "pause.fill" : "waveform")
+                Retiring(state: context.state) {
+                    Image(systemName: "music.note")
                         .foregroundStyle(green)
                 }
+            } compactTrailing: {
+                Retiring(state: context.state) {
+                    Group {
+                        if let end = context.state.timerEnd, end > Date() {
+                            Text(timerInterval: Date()...end, countsDown: true)
+                                .monospacedDigit()
+                                .foregroundStyle(green)
+                                .frame(maxWidth: 44)
+                        } else {
+                            Image(systemName: context.state.paused ? "pause.fill" : "waveform")
+                                .foregroundStyle(green)
+                        }
+                    }
+                }
             } minimal: {
-                Image(systemName: "music.note")
-                    .foregroundStyle(green)
+                Retiring(state: context.state) {
+                    Image(systemName: "music.note")
+                        .foregroundStyle(green)
+                }
             }
             .widgetURL(URL(string: "spotify:"))
         }

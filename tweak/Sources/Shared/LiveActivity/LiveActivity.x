@@ -17,7 +17,7 @@ API_AVAILABLE(ios(17.0))
               titles:(NSArray<NSString *> *)titles artists:(NSArray<NSString *> *)artists uris:(NSArray<NSString *> *)uris
                  tab:(NSInteger)tab title:(NSString *)title artist:(NSString *)artist shuffle:(BOOL)shuffle repeatMode:(NSInteger)repeatMode
             timerEnd:(NSDate *)timerEnd timerEndOfTrack:(BOOL)timerEndOfTrack
-         positionSec:(double)positionSec durationSec:(double)durationSec;
+         positionSec:(double)positionSec durationSec:(double)durationSec dismissAt:(NSDate *)dismissAt;
 + (void)end;
 @end
 
@@ -221,15 +221,24 @@ static void tick(void) API_AVAILABLE(ios(17.0)) {
     NSInteger positionMs = SGKaraokePositionMs();
     double position = positionMs >= 0 ? positionMs / 1000.0 : 0;
 
+    // The idle end as a moment the card carries with it (Batch 4): paused in the
+    // background, this process is suspended and the tick above never runs, so the
+    // end it would have done at the limit is left to the widget, which retires the
+    // card when the moment passes, and to the stale date the bridge sets to it.
+    // Playing sends nil and the card is its ordinary self again.
+    NSDate *dismissAt = paused && limit > 0 && sg_idleSince
+        ? [sg_idleSince dateByAddingTimeInterval:limit] : nil;
+
     NSMutableArray<NSString *> *parts = [NSMutableArray arrayWithObjects:@(view).stringValue, paused ? @"1" : @"0", line, next,
         @(tab).stringValue, title, artist, shuffle ? @"1" : @"0", @(repeatMode).stringValue,
-        @((long long)sleepEnd.timeIntervalSince1970).stringValue, endOfTrack ? @"1" : @"0", @((long long)duration).stringValue, nil];
+        @((long long)sleepEnd.timeIntervalSince1970).stringValue, endOfTrack ? @"1" : @"0", @((long long)duration).stringValue,
+        @((long long)dismissAt.timeIntervalSince1970).stringValue, nil];
     for (NSUInteger i = 0; i < titles.count; i++) [parts addObject:[NSString stringWithFormat:@"%@\t%@\t%@", titles[i], artists[i], uris[i]]];
     send([parts componentsJoinedByString:@"\n"], ^{
         [SGLiveActivityBridge showWithView:view paused:paused line:line nextLine:next titles:titles artists:artists uris:uris
                                         tab:tab title:title artist:artist shuffle:shuffle repeatMode:repeatMode
                                    timerEnd:sleepEnd timerEndOfTrack:endOfTrack
-                                 positionSec:position durationSec:duration];
+                                 positionSec:position durationSec:duration dismissAt:dismissAt];
     });
 }
 

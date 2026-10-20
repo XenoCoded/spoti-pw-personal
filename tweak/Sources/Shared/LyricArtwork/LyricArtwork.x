@@ -46,6 +46,18 @@ static CIContext *ciContext(void) {
     return sg_ciContext;
 }
 
+// A cover's frame, breathing (Batch 13): while a clip renders, the rect a
+// cover is filled into swells and drifts on a slow sine, so still-looking
+// styles move without anything jumping at the loop.
+static CGRect breathingRect(CGRect rect, CGFloat grow, CGFloat pan) {
+    if (sg_frameTime < 0) return rect;
+    CGFloat swell = grow * (0.5 + 0.5 * sin(sg_frameTime * (2 * M_PI / 6)));
+    CGFloat dx = pan * sin(sg_frameTime * (2 * M_PI / 7));
+    CGFloat gy = swell * rect.size.height / MAX(1, rect.size.width);
+    return CGRectMake(rect.origin.x - swell + dx, rect.origin.y - gy,
+                      rect.size.width + 2 * swell, rect.size.height + 2 * gy);
+}
+
 // The cover's own average colour, the accent the Aura draws from.
 static UIColor *averageColor(UIImage *image) {
     if (!image.CGImage) return nil;

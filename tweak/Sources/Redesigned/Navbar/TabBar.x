@@ -29,6 +29,9 @@ static CGFloat sg_room, sg_glassHeight;   // see "room for the glass bar"
 @end
 
 static void syncBar(UIView *stockBar);
+// When the hold that opened Mod Settings began, so a hold whose end never arrives
+// cannot swallow taps for the rest of the launch (personal fork).
+static CFTimeInterval sg_holdAt;
 
 #pragma mark - reading Spotify's items
 
@@ -184,6 +187,11 @@ static void forwardTap(UIView *item) {
 - (void)tabBar:(UITabBar *)tabBar didSelectItem:(UITabBarItem *)item {
     NSUInteger index = [self.items indexOfObject:item];
     if (index == NSNotFound || index >= self.sources.count) return;
+    // A hold whose end callback was lost (the bar rebuilt under the finger, the app
+    // backgrounded mid-press) leaves holding set, and every later tap is silently
+    // swallowed: the bar looks alive and does nothing until a restart. A real hold is
+    // seconds old at most; an older one is a stuck flag, not a press (personal fork).
+    if (self.holding && CACurrentMediaTime() - sg_holdAt > 3) self.holding = NO;
     // Home tapped while on Home pops Spotify's stack, which would take Mod Settings straight off it.
     if (!self.holding) forwardTap(self.sources[index]);
     // Spotify repaints its labels a moment later; a tap it did not take snaps the selection back.
@@ -228,6 +236,7 @@ static void forwardTap(UIView *item) {
 - (void)held:(UILongPressGestureRecognizer *)hold {
     if (hold.state == UIGestureRecognizerStateBegan) {
         self.holding = YES;
+        sg_holdAt = CACurrentMediaTime();
         SGOpenModSettings(self);
     } else if (hold.state != UIGestureRecognizerStateChanged) {
         // The bar may still pick Home as the finger lifts, after this.
@@ -332,6 +341,18 @@ static void makeRoom(UIViewController *container) {
     SGLog(@"tab bar: %.0f pt of room made under Spotify's bar for the glass bar's %.0f, over an inset of %.0f", room, height, inset);
 }
 
+// Spotify's bar as Spotify left it: visible and touchable, the glass host out of the
+// way. The state the sync falls back to whenever it has nothing to mirror, so the
+// bar on screen is always one that works (personal fork).
+static void restoreStockBar(UIView *stockBar, UIView *host) {
+    for (UIView *sub in stockBar.subviews) {
+        if (sub == host) continue;
+        if (sub.alpha != 1) sub.alpha = 1;
+        if (!sub.userInteractionEnabled) sub.userInteractionEnabled = YES;
+    }
+    host.hidden = YES;
+}
+
 static void syncBar(UIView *stockBar) {
     sg_stockBar = stockBar;
 
@@ -357,15 +378,24 @@ static void syncBar(UIView *stockBar) {
     bar.tintColor = SGRAccent();
     UIView *host = objc_getAssociatedObject(stockBar, &kHostKey);
 
+    // The stock row is hidden only once the glass bar has items to stand in for it
+    // (personal fork). Upstream hid it first and asked after: a pass that found the
+    // row momentarily empty — Spotify rebuilding its items, another tweak's layout
+    // landing first — left the stock bar invisible and untouchable with no glass bar
+    // over it, and no later pass was guaranteed to come and put things right. That
+    // is the bar that disappears, or stops being clickable, until a restart.
+    NSArray<UIView *> *sources = tabItems(stockBar);
+    if (!sources.count) {
+        restoreStockBar(stockBar, host);
+        return;
+    }
+
     for (UIView *sub in stockBar.subviews) {
         if (sub == host) continue;
         sub.alpha = 0;
         sub.userInteractionEnabled = NO;
     }
     stockBar.superview.layer.backgroundColor = NULL;
-
-    NSArray<UIView *> *sources = tabItems(stockBar);
-    if (!sources.count) return;
     // An item with no title is drawn by UIKit as its glyph alone, centred, on a bar of the same height.
     BOOL hideLabels = SGHidden(SGRKeyNavbarHideLabels);
 
@@ -414,8 +444,27 @@ static void syncBar(UIView *stockBar) {
     if (!CGRectEqualToRect(bar.frame, host.bounds)) bar.frame = host.bounds;
     if (host.superview != stockBar) [stockBar addSubview:host];
     else if (stockBar.subviews.lastObject != host) [stockBar bringSubviewToFront:host];
+    // The glass bar is the only bar there is while the stock one is hidden, so it is
+    // never left in a state nothing can see or touch (personal fork).
+    host.hidden = NO;
+    if (host.alpha < 1) host.alpha = 1;
+    bar.hidden = NO;
+    if (!bar.userInteractionEnabled) bar.userInteractionEnabled = YES;
     logBarOnce(bar);
     makeRoom(containerOf(stockBar));
+
+    // A watchdog, not a hope (personal fork): if this pass still left the bar wrong
+    // — the host torn out by a transition, the items short of the row — one more
+    // sync is owed, because the layout pass that would have fixed it may never come.
+    static BOOL recheckPending;
+    if (stockBar.window && !recheckPending
+        && (host.superview != stockBar || bar.items.count != sources.count)) {
+        recheckPending = YES;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            recheckPending = NO;
+            if (stockBar.window) syncBar(stockBar);
+        });
+    }
 }
 
 #pragma mark - hooks
@@ -436,6 +485,16 @@ static UIView *tabBarOf(UIView *item) {
     holdHome((UIView *)self);
     syncBar((UIView *)self);
     SGRLogTabBarRow((UIView *)self);
+}
+
+// A bar put back in a window after a transition gets its sync straight away, rather
+// than whenever the next layout pass happens to land (personal fork).
+- (void)didMoveToWindow {
+    %orig;
+    if (((UIView *)self).window) {
+        __weak UIView *bar = (UIView *)self;
+        dispatch_async(dispatch_get_main_queue(), ^{ if (bar) syncBar(bar); });
+    }
 }
 %end
 

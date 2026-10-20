@@ -1,7 +1,11 @@
-// Home redesign: the header the way the Music app has it. The filter pills (All, Music, Podcasts) go and
-// a large title takes their place at the leading edge; the avatar that opens the side drawer moves to the
-// trailing edge; the scrim Spotify lays behind the header goes too, the soft scroll edge (Kit/SGREdgeEffect.x)
-// being what keeps the title clear of the page scrolling under it, as on every other redesigned page.
+// Home redesign: the header the way the Music app has it. The filter pills (All, Music, Podcasts) go;
+// the avatar that opens the side drawer moves to the trailing edge; the scrim Spotify lays behind the
+// header goes too, the soft scroll edge (Kit/SGREdgeEffect.x) being what keeps the header clear of the
+// page scrolling under it, as on every other redesigned page.
+//
+// Personal fork: no large title at the leading edge. Upstream put the tab's name there; the tab bar
+// already says which page this is, and the header reads cleaner with nothing in the avatar's row but
+// the avatar.
 //
 // Tree (trees/clean/home/10.txt:3018-3051): FunkisViewController's view holds a 402x112 UIView around
 // Reprise_LiquidGlassKit LiquidGlass.GradientView (the scrim) and, at {0, 62}, an
@@ -16,17 +20,9 @@
 // the header in a right to left language. The pills stay in the stack with no alpha rather than hidden,
 // the way the redesign takes any view out of a stack Spotify arranges (Kit/SGRRestyle.h).
 //
-// The title is Spotify's own name for the tab, read off its tab bar item (id=TabBar.Item.Home, 10.txt:3100),
-// so it follows the app's language.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Home.h"
-
-// Tries at finding the tab's name before settling for the English one: a miss walks the window.
-static const NSUInteger kTitleTries = 8;
-
-static char kTitleKey, kTabKey;
-static NSString *sg_tabName;
 
 static void vanish(UIView *view) {
     if (!view) return;
@@ -40,40 +36,6 @@ static UIView *childNamed(UIView *host, NSString *marker) {
         if ([NSStringFromClass(sub.class) containsString:marker]) return sub;
     }
     return nil;
-}
-
-static NSString *tabName(UIWindow *window) {
-    if (sg_tabName || !window) return sg_tabName ?: @"Home";
-    static NSUInteger tries;
-    if (tries >= kTitleTries) return @"Home";
-    tries++;
-    UIView *item = SGRFindByIdentifier(window, @"TabBar.Item.Home", &kTabKey);
-    __block NSString *name = nil;
-    if (item) SGForEachView(item, ^(UIView *v) {
-        if (!name && [v isKindOfClass:UILabel.class] && ((UILabel *)v).text.length) name = ((UILabel *)v).text;
-    });
-    if (!name) {
-        if (tries == kTitleTries) SGLog(@"redesign home: the Home tab's name not found, the title stays English");
-        return @"Home";
-    }
-    sg_tabName = [name copy];
-    SGLog(@"redesign home: title \"%@\" from the tab bar", sg_tabName);
-    return sg_tabName;
-}
-
-static UILabel *titleIn(UIView *header) {
-    UILabel *title = objc_getAssociatedObject(header, &kTitleKey);
-    if (!title) {
-        title = [UILabel new];
-        title.textColor = SGRPrimary();
-        title.accessibilityTraits = UIAccessibilityTraitHeader;
-        title.adjustsFontSizeToFitWidth = YES;
-        title.minimumScaleFactor = 0.6;
-        title.userInteractionEnabled = NO;
-        objc_setAssociatedObject(header, &kTitleKey, title, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
-    if (title.superview != header) [header addSubview:title];
-    return title;
 }
 
 // The header's views, found once: the page lays out again as it appears, and the walk names classes.
@@ -118,24 +80,10 @@ static void layoutHeader(UIViewController *page) {
     }
     [stack layoutIfNeeded];
 
-    UILabel *title = titleIn(header);
-    NSString *text = tabName(header.window);
-    if (![title.text isEqualToString:text]) {
-        title.text = text;
-        title.accessibilityLabel = text;
-    }
-    UIFont *font = SGRFont(UIFontTextStyleLargeTitle, UIFontWeightBold, UIContentSizeCategoryLarge);
-    if (![title.font isEqual:font]) title.font = font;
-
-    CGFloat trailing = face ? CGRectGetMinX([stack convertRect:face.frame toView:header]) - SGRGrid : header.bounds.size.width - SGRSideMargin;
-    CGFloat height = ceil(font.lineHeight);
-    CGRect frame = CGRectMake(SGRSideMargin, round(CGRectGetMidY(stack.frame) - height / 2), MAX(0, trailing - SGRSideMargin), height);
-    if (!CGRectEqualToRect(title.frame, frame)) title.frame = frame;
-
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        SGLog(@"redesign home: header %@, avatar %@ in the stack %@, title %@, scrim %@", NSStringFromCGRect(header.frame),
-              face ? NSStringFromCGRect(face.frame) : @"not found", NSStringFromCGRect(stack.frame), NSStringFromCGRect(frame),
+        SGLog(@"redesign home: header %@, avatar %@ in the stack %@, scrim %@", NSStringFromCGRect(header.frame),
+              face ? NSStringFromCGRect(face.frame) : @"not found", NSStringFromCGRect(stack.frame),
               sg_scrim ? @"found" : @"not found");
     });
 }

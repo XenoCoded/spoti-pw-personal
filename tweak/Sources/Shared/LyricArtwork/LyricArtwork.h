@@ -46,3 +46,8 @@ typedef NS_ENUM(NSInteger, SGLyricArtworkStyle) {
 @class SGModRow;
 // The rows for the Lock screen widget page's Artwork section.
 NSArray<SGModRow *> *SGLyricArtworkRows(void);
+// The styles' picker names, in enum order (Batch 20).
+NSArray<NSString *> *SGLyricArtworkStyleNames(void);
+// One style drawn with sample facts — the picker's thumbnails (Batch 20).
+@class UIImage;
+UIImage *SGLyricArtworkSample(NSInteger style, CGSize size);

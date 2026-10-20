@@ -1078,11 +1078,29 @@ static void drawGigPoster(SGWCtx *c) {
     UIFont *font = [UIFont boldSystemFontOfSize:fontSize];
     CGFloat y = size.height * 0.06;
     BOOL black = YES;
+    NSInteger wordAt = 0;
     for (NSString *word in words) {
-        drawText(word, CGRectMake(size.width * 0.07, y, size.width * 0.86, fontSize * 1.2), font,
-                 black ? [UIColor colorWithWhite:0.05 alpha:1] : UIColor.whiteColor, NSTextAlignmentLeft);
+        CGRect wordRect = CGRectMake(size.width * 0.07, y, size.width * 0.86, fontSize * 1.2);
+        if (sg_frameTime >= 0) {
+            // Each word stamps down in turn, a touch large, then settles.
+            double k = MIN(1, MAX(0, (sg_frameTime - wordAt * 0.07) / 0.25));
+            double e = 1 - pow(1 - k, 3);
+            CGContextRef ctx = UIGraphicsGetCurrentContext();
+            CGContextSaveGState(ctx);
+            CGContextTranslateCTM(ctx, CGRectGetMidX(wordRect), CGRectGetMidY(wordRect));
+            CGFloat scale = 1 + 0.13 * (1 - (CGFloat)e);
+            CGContextScaleCTM(ctx, scale, scale);
+            CGContextTranslateCTM(ctx, -CGRectGetMidX(wordRect), -CGRectGetMidY(wordRect));
+            drawText(word, wordRect, font,
+                     black ? [UIColor colorWithWhite:0.05 alpha:1] : UIColor.whiteColor, NSTextAlignmentLeft);
+            CGContextRestoreGState(ctx);
+        } else {
+            drawText(word, wordRect, font,
+                     black ? [UIColor colorWithWhite:0.05 alpha:1] : UIColor.whiteColor, NSTextAlignmentLeft);
+        }
         y += fontSize * 0.94;
         black = !black;
+        wordAt++;
     }
     NSString *credit = [NSString stringWithFormat:@"%@ — %@", c->title.uppercaseString, c->artist.uppercaseString];
     drawText(credit, CGRectMake(size.width * 0.07, MIN(y + size.height * 0.03, size.height * 0.9), size.width * 0.86, size.height * 0.025),
@@ -1608,6 +1626,7 @@ static BOOL styleAnimates(NSInteger style) {
         case SGLyricArtworkTwitter:
         case SGLyricArtworkMagazine:
         case SGLyricArtworkDuotone:
+        case SGLyricArtworkGigPoster:
             return YES;
         default:
             return NO;

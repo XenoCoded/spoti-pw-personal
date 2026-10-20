@@ -147,6 +147,207 @@ static CGFloat drawAttributed(NSAttributedString *text, CGFloat y, CGFloat floor
     return y + ceil(measured.size.height);
 }
 
+// The same, centred — the Record style sets its type down the middle.
+static CGFloat drawAttributedCentered(NSAttributedString *text, CGFloat y, CGFloat floor, CGSize size) {
+    if (!text.length || y >= floor) return y;
+    NSMutableAttributedString *centred = [text mutableCopy];
+    NSMutableParagraphStyle *paragraph = [NSMutableParagraphStyle new];
+    paragraph.alignment = NSTextAlignmentCenter;
+    [centred addAttribute:NSParagraphStyleAttributeName value:paragraph range:NSMakeRange(0, centred.length)];
+    CGRect box = CGRectMake(size.width * 0.06, y, size.width * 0.88, floor - y);
+    CGRect measured = [centred boundingRectWithSize:box.size
+                                             options:NSStringDrawingUsesLineFragmentOrigin context:nil];
+    [centred drawWithRect:CGRectMake(box.origin.x, y, box.size.width, ceil(measured.size.height))
+                  options:NSStringDrawingUsesLineFragmentOrigin context:nil];
+    return y + ceil(measured.size.height);
+}
+
+static CGFloat drawCentered(NSString *text, CGFloat y, CGFloat floor, CGSize size, UIFont *font, UIColor *color) {
+    if (!text.length || y >= floor) return y;
+    return drawAttributedCentered(
+        [[NSAttributedString alloc] initWithString:text
+                                        attributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: color}],
+        y, floor, size);
+}
+
+// An image drawn to fill a rect, the cover's way, centred on the overflow.
+static void drawCoverInRect(UIImage *image, CGRect rect) {
+    CGFloat scale = MAX(rect.size.width / image.size.width, rect.size.height / image.size.height);
+    CGSize drawn = CGSizeMake(image.size.width * scale, image.size.height * scale);
+    [image drawInRect:CGRectMake(rect.origin.x + (rect.size.width - drawn.width) / 2,
+                                  rect.origin.y + (rect.size.height - drawn.height) / 2,
+                                  drawn.width, drawn.height)];
+}
+
+#pragma mark - Record and Chat (Batch 6)
+
+// The Record: black, a wash of the cover's colour, and the cover pressed as the
+// label of a vinyl disc — grooves, spindle hole and all — with the lines set
+// centred under it. A still cannot spin; the record is the look, not the motion.
+static UIImage *drawRecordArtwork(CGSize size, NSString *prev, NSString *current, NSString *next,
+                                  UIImage *cover, SGKaraokeLine *line, NSString *title, NSString *artist) {
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+    format.scale = 1;
+    format.opaque = YES;
+    return [[[UIGraphicsImageRenderer alloc] initWithSize:size format:format]
+        imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        [UIColor.blackColor setFill];
+        UIRectFill(CGRectMake(0, 0, size.width, size.height));
+        UIColor *average = averageColor(cover);
+        if (average) {
+            [[average colorWithAlphaComponent:0.13] setFill];
+            UIRectFill(CGRectMake(0, 0, size.width, size.height));
+        }
+        CGFloat diameter = size.width * 0.60;
+        CGRect disc = CGRectMake((size.width - diameter) / 2, size.height * 0.06, diameter, diameter);
+        [[UIColor colorWithWhite:0.06 alpha:1] setFill];
+        [[UIBezierPath bezierPathWithOvalInRect:disc] fill];
+        [[UIColor colorWithWhite:1 alpha:0.08] setStroke];
+        for (CGFloat inset = diameter * 0.05; inset < diameter * 0.28; inset += diameter * 0.032) {
+            UIBezierPath *ring = [UIBezierPath bezierPathWithOvalInRect:CGRectInset(disc, inset, inset)];
+            ring.lineWidth = 1.2;
+            [ring stroke];
+        }
+        if (cover) {
+            CGRect label = CGRectInset(disc, diameter * 0.295, diameter * 0.295);
+            CGContextSaveGState(context.CGContext);
+            [[UIBezierPath bezierPathWithOvalInRect:label] addClip];
+            drawCoverInRect(cover, label);
+            CGContextRestoreGState(context.CGContext);
+        }
+        CGRect hole = CGRectMake(size.width / 2 - diameter * 0.018, disc.origin.y + diameter / 2 - diameter * 0.018,
+                                 diameter * 0.036, diameter * 0.036);
+        [UIColor.blackColor setFill];
+        [[UIBezierPath bezierPathWithOvalInRect:hole] fill];
+        [[UIColor colorWithWhite:1 alpha:0.5] setStroke];
+        UIBezierPath *rim = [UIBezierPath bezierPathWithOvalInRect:hole];
+        rim.lineWidth = 1;
+        [rim stroke];
+
+        CGFloat floor = size.height * 0.97;
+        CGFloat y = CGRectGetMaxY(disc) + size.height * 0.035;
+        y = drawCentered(title, y, floor, size,
+                         [UIFont systemFontOfSize:size.height * 0.025 weight:UIFontWeightSemibold],
+                         [UIColor colorWithWhite:1 alpha:0.9]);
+        if (artist.length) {
+            y = drawCentered(artist, y, floor, size,
+                             [UIFont systemFontOfSize:size.height * 0.021],
+                             [UIColor colorWithWhite:1 alpha:0.5]);
+        }
+        y += size.height * 0.03;
+        y = drawCentered(prev, y, floor, size,
+                         [UIFont systemFontOfSize:size.height * 0.027],
+                         [UIColor colorWithWhite:1 alpha:0.35]);
+        if (prev.length) y += size.height * 0.012;
+        if ([current isEqualToString:@"♪"]) {
+            y = drawCentered(current, y, floor, size,
+                             [UIFont boldSystemFontOfSize:size.height * 0.10], UIColor.whiteColor);
+        } else {
+            y = drawAttributedCentered(sungLine(line, current,
+                                                [UIFont boldSystemFontOfSize:size.height * 0.044],
+                                                UIColor.whiteColor, [UIColor colorWithWhite:1 alpha:0.38]),
+                                       y, floor, size);
+        }
+        y += size.height * 0.012;
+        drawCentered(next, y, floor, size,
+                     [UIFont systemFontOfSize:size.height * 0.030 weight:UIFontWeightSemibold],
+                     [UIColor colorWithWhite:1 alpha:0.5]);
+    }];
+}
+
+// One chat bubble; returns the y under it. Outgoing sits right, in the accent;
+// incoming left, in grey.
+static CGFloat drawBubble(NSString *text, CGFloat y, CGSize size, BOOL outgoing,
+                          UIColor *fill, UIColor *textColor, UIFont *font) {
+    if (!text.length) return y;
+    CGFloat maxText = size.width * 0.68;
+    CGRect measured = [text boundingRectWithSize:CGSizeMake(maxText, CGFLOAT_MAX)
+                                         options:NSStringDrawingUsesLineFragmentOrigin
+                                      attributes:@{NSFontAttributeName: font} context:nil];
+    CGFloat padX = size.width * 0.038, padY = size.height * 0.012;
+    CGFloat width = ceil(measured.size.width) + 2 * padX, height = ceil(measured.size.height) + 2 * padY;
+    CGFloat x = outgoing ? size.width * 0.94 - width : size.width * 0.06;
+    CGRect bubble = CGRectMake(x, y, width, height);
+    [fill setFill];
+    [[UIBezierPath bezierPathWithRoundedRect:bubble cornerRadius:height * 0.36] fill];
+    [text drawInRect:CGRectMake(x + padX, y + padY, measured.size.width, measured.size.height)
+      withAttributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: textColor}];
+    return y + height;
+}
+
+// The Chat: the lines as a conversation — what was sung on the left in grey, the
+// line being sung on the right in the cover's colour, what is next waiting on
+// the left, and the song named at the top the way a chat names its person.
+static UIImage *drawChatArtwork(CGSize size, NSString *prev, NSString *current, NSString *next,
+                                UIImage *cover, NSString *title, NSString *artist) {
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+    format.scale = 1;
+    format.opaque = YES;
+    return [[[UIGraphicsImageRenderer alloc] initWithSize:size format:format]
+        imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        [UIColor.blackColor setFill];
+        UIRectFill(CGRectMake(0, 0, size.width, size.height));
+        UIColor *average = averageColor(cover);
+        UIColor *accent = average ? lifted(average) : [UIColor colorWithRed:0.11 green:0.85 blue:0.38 alpha:1];
+        CGFloat floor = size.height * 0.97;
+        CGFloat y = size.height * 0.055;
+        y = drawCentered(title.length ? title : @"♪", y, floor, size,
+                         [UIFont systemFontOfSize:size.height * 0.027 weight:UIFontWeightSemibold],
+                         [UIColor colorWithWhite:1 alpha:0.92]);
+        if (artist.length) {
+            y = drawCentered(artist, y, floor, size,
+                             [UIFont systemFontOfSize:size.height * 0.020],
+                             [UIColor colorWithWhite:1 alpha:0.45]);
+        }
+        y += size.height * 0.012;
+        [[UIColor colorWithWhite:1 alpha:0.14] setFill];
+        UIRectFill(CGRectMake(size.width * 0.06, y, size.width * 0.88, 1));
+        y += size.height * 0.05;
+        UIFont *pastFont = [UIFont systemFontOfSize:size.height * 0.031];
+        UIFont *nowFont = [UIFont systemFontOfSize:size.height * 0.036 weight:UIFontWeightMedium];
+        y = drawBubble(prev, y, size, NO, [UIColor colorWithWhite:1 alpha:0.13],
+                       [UIColor colorWithWhite:1 alpha:0.65], pastFont);
+        if (prev.length) y += size.height * 0.016;
+        y = drawBubble(current, y, size, YES, accent, UIColor.whiteColor, nowFont);
+        y += size.height * 0.016;
+        drawBubble(next, y, size, NO, [UIColor colorWithWhite:1 alpha:0.09],
+                   [UIColor colorWithWhite:1 alpha:0.5], pastFont);
+    }];
+}
+
+// The line as gradient text: rendered alone, its glyphs cut out of a wash of the
+// cover's colours (destination-in keeps the wash only where the type is).
+static CGFloat drawGradientLine(NSAttributedString *text, CGFloat y, CGFloat floor, CGSize size,
+                                UIColor *top, UIColor *bottom) {
+    if (!text.length || y >= floor) return y;
+    CGFloat margin = size.width * 0.08;
+    CGRect box = CGRectMake(margin, y, size.width - 2 * margin, floor - y);
+    CGRect measured = [text boundingRectWithSize:box.size
+                                         options:NSStringDrawingUsesLineFragmentOrigin context:nil];
+    CGRect target = CGRectMake(box.origin.x, y, box.size.width, ceil(measured.size.height));
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+    format.scale = 1;
+    format.opaque = NO;
+    UIImage *cut = [[[UIGraphicsImageRenderer alloc] initWithSize:target.size format:format]
+        imageWithActions:^(UIGraphicsImageRendererContext *cutContext) {
+        CGContextRef ctx = cutContext.CGContext;
+        CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        CGFloat topC[4], bottomC[4];
+        [top getRed:&topC[0] green:&topC[1] blue:&topC[2] alpha:&topC[3]];
+        [bottom getRed:&bottomC[0] green:&bottomC[1] blue:&bottomC[2] alpha:&bottomC[3]];
+        CGFloat components[] = {topC[0], topC[1], topC[2], 1, bottomC[0], bottomC[1], bottomC[2], 1};
+        CGGradientRef gradient = CGGradientCreateWithColorComponents(space, components, NULL, 2);
+        CGContextDrawLinearGradient(ctx, gradient, CGPointZero, CGPointMake(0, target.size.height), 0);
+        CGGradientRelease(gradient);
+        CGColorSpaceRelease(space);
+        CGContextSetBlendMode(ctx, kCGBlendModeDestinationIn);
+        [text drawWithRect:CGRectMake(0, 0, target.size.width, target.size.height)
+                   options:NSStringDrawingUsesLineFragmentOrigin context:nil];
+    }];
+    [cut drawInRect:target];
+    return y + target.size.height;
+}
+
 static UIImage *drawLyricArtwork(CGSize size, NSString *prev, NSString *current, NSString *next,
                                  NSInteger style, UIImage *cover, SGKaraokeLine *line,
                                  NSString *title, NSString *artist) {
@@ -157,7 +358,7 @@ static UIImage *drawLyricArtwork(CGSize size, NSString *prev, NSString *current,
         imageWithActions:^(UIGraphicsImageRendererContext *context) {
         CGRect full = CGRectMake(0, 0, size.width, size.height);
         UIColor *accent = nil;
-        if (style == SGLyricArtworkAura) {
+        if (style == SGLyricArtworkAura || style == SGLyricArtworkGradient) {
             // The rice (Batch 4): the cover blurred into an aura of its own colours,
             // a wash of its average over that, and darkness falling toward the words,
             // so cover, type and accent all come from the same song.
@@ -182,7 +383,7 @@ static UIImage *drawLyricArtwork(CGSize size, NSString *prev, NSString *current,
         }
         CGFloat floor = size.height * 0.74;
         CGFloat y = size.height * 0.10;
-        if (style == SGLyricArtworkAura && title.length) {
+        if ((style == SGLyricArtworkAura || style == SGLyricArtworkGradient) && title.length) {
             y = size.height * 0.06;
             y = drawLine(title, y, floor, size,
                          [UIFont systemFontOfSize:size.height * 0.026 weight:UIFontWeightSemibold],
@@ -205,6 +406,18 @@ static UIImage *drawLyricArtwork(CGSize size, NSString *prev, NSString *current,
             [current drawInRect:CGRectMake((size.width - note.width) / 2, y, note.width, note.height)
                  withAttributes:attrs];
             y += note.height;
+        } else if (style == SGLyricArtworkGradient) {
+            // The wash runs from the cover's colour, lifted, down to its deep shade;
+            // the sweep survives as alpha — unsung words take less of the wash.
+            UIFont *font = [UIFont boldSystemFontOfSize:size.height * 0.056];
+            UIColor *top = accent ?: [UIColor colorWithRed:0.11 green:0.85 blue:0.38 alpha:1];
+            CGFloat hue = 0, saturation = 0, brightness = 0;
+            [top getHue:&hue saturation:&saturation brightness:&brightness alpha:NULL];
+            UIColor *bottom = [UIColor colorWithHue:hue saturation:MIN(1, saturation + 0.1)
+                                         brightness:brightness * 0.45 alpha:1];
+            y = drawGradientLine(sungLine(line, current, font, UIColor.whiteColor,
+                                          [UIColor colorWithWhite:1 alpha:0.38]),
+                                 y, floor, size, top, bottom);
         } else {
             UIFont *font = [UIFont boldSystemFontOfSize:size.height * (style == SGLyricArtworkAura ? 0.056 : 0.052)];
             y = drawAttributed(sungLine(line, current, font, UIColor.whiteColor,
@@ -264,6 +477,12 @@ static void tick(void) {
     sg_artwork = [[MPMediaItemArtwork alloc] initWithBoundsSize:CGSizeMake(900, 1200)
         requestHandler:^UIImage *(CGSize size) {
             UIImage *coverImage = cover ? [cover imageWithSize:size] : nil;
+            if (style == SGLyricArtworkRecord) {
+                return drawRecordArtwork(size, prev, current, next, coverImage, line, title, artist);
+            }
+            if (style == SGLyricArtworkChat) {
+                return drawChatArtwork(size, prev, current, next, coverImage, title, artist);
+            }
             return drawLyricArtwork(size, prev, current, next, style, coverImage, line, title, artist);
         }];
     SGLog(@"lyric artwork: %@ — %@", trackID, current);

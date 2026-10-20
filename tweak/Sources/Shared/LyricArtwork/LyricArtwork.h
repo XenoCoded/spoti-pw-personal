@@ -12,6 +12,9 @@ typedef NS_ENUM(NSInteger, SGLyricArtworkStyle) {
     SGLyricArtworkPoster = 0,   // the cover behind, darkened, the lines over it
     SGLyricArtworkPlain,        // plain black, the line big and bold
     SGLyricArtworkAura,         // the cover blurred into an aura of its own colours (Batch 4)
+    SGLyricArtworkRecord,       // the cover pressed as a record, the lines under it (Batch 6)
+    SGLyricArtworkChat,         // the lines as chat bubbles (Batch 6)
+    SGLyricArtworkGradient,     // the line in a gradient of the cover's colours (Batch 6)
 };
 
 @class SGModRow;

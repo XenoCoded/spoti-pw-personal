@@ -21,6 +21,7 @@
 #import "Shared/Flags/Flags.h"
 #import "Shared/AudioEffects/AudioEffectsPage.h"
 #import "Shared/LiveActivity/LiveActivity.h"
+#import "Shared/ListeningStats/ListeningStats.h"
 #import "App/About/About.h"
 #import "App/Donate/Donate.h"
 #import "Pages.h"
@@ -40,9 +41,8 @@ static UIViewController *modSettingsPage(void) {
     // that no switch can put right, and it is worth reading before anything else.
     SGModRow *signing = SGSigningWarningRow();
     if (signing) [sections addObject:SGSection(nil, @[signing])];
-    SGModRow *discord = SGWithSymbol(SGLinkRow(@"Join the Discord", @"Release pings, help and previews", SGDiscordURL), @"bubble.left.and.bubble.right.fill");
-    discord.color = SGDiscordColor();
-    [sections addObject:SGSection(nil, @[SGDonateRow(), discord])];
+    // No credits on this page (personal fork): upstream led with its donate row and
+    // Discord; the page is the user's settings, not a billboard.
     SGModRow *mod = pageRow(@"Mod", @"info.circle", ^UIViewController *{ return SGAboutPage(); });
     mod.value = ^NSString *{ return @(SG_VERSION); };
     // The audio effects work on the sound, so both looks have them, with what they are doing beside the chevron.
@@ -73,7 +73,7 @@ static UIViewController *modSettingsPage(void) {
             mod,
         ]),
     ]];
-    return [[SGModPage alloc] initWithTitle:@"spoti.pw" intro:nil sections:sections footer:nil];
+    return [[SGModPage alloc] initWithTitle:@"Mod Settings" intro:nil sections:sections footer:nil];
 }
 
 #pragma mark - row in the settings list and the side drawer
@@ -82,12 +82,27 @@ static UIViewController *modSettingsPage(void) {
 // drawn like the drawer's own rows: no chevron, icon and title 4pt further in.
 @interface SGModSettingsRow : UIControl
 @property (nonatomic) BOOL drawer;
+// What the row opens, where it is not Mod Settings itself (personal fork): the side
+// drawer also carries a Listening stats row, the page being three taps deep otherwise.
+@property (nonatomic, copy) NSString *pageTitle;
+@property (nonatomic, copy) UIViewController *(^pageBlock)(void);
+- (void)applyTitle:(NSString *)title symbol:(NSString *)symbol page:(UIViewController *(^)(void))page;
 @end
 
 @implementation SGModSettingsRow {
     UIImageView *_icon;
     UILabel *_title;
     UIImageView *_chevron;
+}
+
+- (void)applyTitle:(NSString *)title symbol:(NSString *)symbol page:(UIViewController *(^)(void))page {
+    self.pageTitle = title;
+    self.pageBlock = page;
+    _title.text = title;
+    [_icon removeFromSuperview];
+    _icon = SGSymbolView(symbol, 20, UIImageSymbolWeightRegular, 24);
+    [self insertSubview:_icon atIndex:0];
+    [self setNeedsLayout];
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -133,13 +148,14 @@ static UINavigationController *navigationIn(UIViewController *page) {
     for (UIResponder *r = self; r && !owner; r = r.nextResponder) {
         if ([r isKindOfClass:UIViewController.class]) owner = (UIViewController *)r;
     }
+    UIViewController *page = self.pageBlock ? self.pageBlock() : modSettingsPage();
     UIViewController *presenting = self.drawer ? owner.presentingViewController : nil;
     if (!presenting) {
-        SGShowPage(owner, modSettingsPage());
+        SGShowPage(owner, page);
         return;
     }
     [presenting dismissViewControllerAnimated:YES completion:^{
-        SGShowPage(navigationIn(presenting).topViewController ?: presenting, modSettingsPage());
+        SGShowPage(navigationIn(presenting).topViewController ?: presenting, page);
     }];
 }
 
@@ -156,21 +172,32 @@ void SGOpenModSettings(UIView *source) {
     SGShowPage(nav.topViewController ?: SGTopController(), modSettingsPage());
 }
 
-// At the end of the settings list, or above the first row of the drawer's, with the inset for it
-// added again whenever Spotify resets the inset.
-static void placeRow(UICollectionView *list, SGModSettingsRow *row) {
-    SGAdoptFonts(list, row);
+// At the end of the settings list, or above the first row of the drawer's, with the inset for them
+// added again whenever Spotify resets the inset. The drawer carries two rows (personal fork):
+// Mod Settings, then Listening stats under it.
+static void placeRow(UICollectionView *list, NSArray<SGModSettingsRow *> *rows) {
     CGFloat bottom = list.contentSize.height;
-    row.hidden = !row.drawer && bottom <= 0;
-    row.frame = CGRectMake(0, row.drawer ? -kRowHeight : bottom, list.bounds.size.width, kRowHeight);
+    [rows enumerateObjectsUsingBlock:^(SGModSettingsRow *row, NSUInteger i, BOOL *stop) {
+        SGAdoptFonts(list, row);
+        row.hidden = !row.drawer && bottom <= 0;
+        CGFloat y = row.drawer ? -(CGFloat)(rows.count - i) * kRowHeight : bottom + (CGFloat)i * kRowHeight;
+        row.frame = CGRectMake(0, y, list.bounds.size.width, kRowHeight);
+    }];
 
     UIEdgeInsets inset = list.contentInset;
     NSValue *applied = objc_getAssociatedObject(list, &kInsetKey);
     if (applied && UIEdgeInsetsEqualToEdgeInsets(inset, applied.UIEdgeInsetsValue)) return;
-    if (row.drawer) inset.top += kRowHeight;
-    else inset.bottom += kRowHeight;
+    if (rows.firstObject.drawer) inset.top += kRowHeight * rows.count;
+    else inset.bottom += kRowHeight * rows.count;
     objc_setAssociatedObject(list, &kInsetKey, [NSValue valueWithUIEdgeInsets:inset], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     list.contentInset = inset;
+}
+
+static SGModSettingsRow *statsRow(void) {
+    SGModSettingsRow *row = [[SGModSettingsRow alloc] initWithFrame:CGRectZero];
+    row.drawer = YES;
+    [row applyTitle:@"Listening stats" symbol:@"chart.bar.fill" page:^UIViewController *{ return SGListeningStatsSettingsPage(); }];
+    return row;
 }
 
 // Media quality, Playback, Account and most of the rest of settings are the same controller class
@@ -204,17 +231,17 @@ static BOOL isSettingsRoot(UIViewController *list) {
     BOOL root = isSettingsRoot((UIViewController *)self);
     for (UIView *sub in ((UIViewController *)self).view.subviews) {
         if (![sub isKindOfClass:UICollectionView.class]) continue;
-        SGModSettingsRow *row = objc_getAssociatedObject(sub, &kRowKey);
+        NSArray<SGModSettingsRow *> *rows = objc_getAssociatedObject(sub, &kRowKey);
         // A page that laid itself out before it was on the stack looked like the list for as long
         // as that took; the row goes again as soon as it can be seen for what it is.
         if (!root) {
-            [row removeFromSuperview];
+            for (SGModSettingsRow *row in rows) [row removeFromSuperview];
             objc_setAssociatedObject(sub, &kRowKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             continue;
         }
-        if (row) continue;
-        row = [[SGModSettingsRow alloc] initWithFrame:CGRectZero];
-        objc_setAssociatedObject(sub, &kRowKey, row, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (rows) continue;
+        SGModSettingsRow *row = [[SGModSettingsRow alloc] initWithFrame:CGRectZero];
+        objc_setAssociatedObject(sub, &kRowKey, @[row], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [sub addSubview:row];
     }
 }
@@ -230,8 +257,10 @@ static BOOL isSettingsRoot(UIViewController *list) {
         if (objc_getAssociatedObject(v, &kRowKey)) return;
         SGModSettingsRow *row = [[SGModSettingsRow alloc] initWithFrame:CGRectZero];
         row.drawer = YES;
-        objc_setAssociatedObject(v, &kRowKey, row, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        SGModSettingsRow *stats = statsRow();
+        objc_setAssociatedObject(v, &kRowKey, @[row, stats], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [v addSubview:row];
+        [v addSubview:stats];
     });
 }
 %end
@@ -240,8 +269,8 @@ static BOOL isSettingsRoot(UIViewController *list) {
 %hook UICollectionView
 - (void)layoutSubviews {
     %orig;
-    SGModSettingsRow *row = objc_getAssociatedObject(self, &kRowKey);
-    if (row) placeRow(self, row);
+    NSArray<SGModSettingsRow *> *rows = objc_getAssociatedObject(self, &kRowKey);
+    if (rows) placeRow(self, rows);
 }
 %end
 

@@ -48,9 +48,7 @@ UIViewController *SGAboutPage(void) {
             SGStatRow(@"Spotify", ^NSString *{ return spotify; }),
         ]),
         SGSection(nil, @[
-            withSymbol(SGLinkRow(@"Website", nil, SGSiteURL), @"safari"),
-            withSymbol(SGLinkRow(@"Discord", nil, SGDiscordURL), @"bubble.left.and.bubble.right"),
-            withSymbol(SGLinkRow(@"GitHub", nil, SGRepoURL), @"chevron.left.forwardslash.chevron.right"),
+            // No credit links (personal fork): no Website, Discord or GitHub rows.
             withSymbol(SGPageRow(@"Licenses", ^UIViewController *{ return SGLicensesPage(); }), @"doc.text"),
             withSymbol(SGActionRow(@"Welcome tour", nil, ^{ SGShowOnboarding(); }), @"map"),
         ]),

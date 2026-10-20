@@ -1453,8 +1453,18 @@ static void drawSubtitles(SGWCtx *c) {
     [sub addAttribute:NSParagraphStyleAttributeName value:centre range:NSMakeRange(0, sub.length)];
     CGFloat h = ceil([sub boundingRectWithSize:CGSizeMake(size.width * 0.86, frame.size.height * 0.4)
                                        options:NSStringDrawingUsesLineFragmentOrigin context:nil].size.height);
-    [sub drawWithRect:CGRectMake(size.width * 0.07, CGRectGetMaxY(frame) - h - size.height * 0.045, size.width * 0.86, h)
-              options:NSStringDrawingUsesLineFragmentOrigin context:nil];
+    if (sg_frameTime >= 0) {
+        double k = MIN(1, sg_frameTime / 0.3);
+        CGContextRef ctx = UIGraphicsGetCurrentContext();
+        CGContextSaveGState(ctx);
+        CGContextTranslateCTM(ctx, 0, (1 - (1 - pow(1 - k, 3))) * size.height * 0.012);
+        [sub drawWithRect:CGRectMake(size.width * 0.07, CGRectGetMaxY(frame) - h - size.height * 0.045, size.width * 0.86, h)
+                  options:NSStringDrawingUsesLineFragmentOrigin context:nil];
+        CGContextRestoreGState(ctx);
+    } else {
+        [sub drawWithRect:CGRectMake(size.width * 0.07, CGRectGetMaxY(frame) - h - size.height * 0.045, size.width * 0.86, h)
+                  options:NSStringDrawingUsesLineFragmentOrigin context:nil];
+    }
     if (c->line.translation.length) {
         drawText(c->line.translation, CGRectMake(size.width * 0.07, CGRectGetMaxY(frame) - size.height * 0.035, size.width * 0.86, size.height * 0.03),
                  [UIFont systemFontOfSize:size.height * 0.017], UIColor.whiteColor, NSTextAlignmentCenter);
@@ -1553,7 +1563,8 @@ static UIImage *drawLyricArtwork(CGSize size, NSString *prev, NSString *current,
             }
             drawScrim(size, 0.05, 0.55);
         } else if (style == SGLyricArtworkPoster && cover) {
-            drawCoverFilled(cover, size);
+            if (sg_frameTime >= 0) drawCoverInRect(cover, breathingRect(full, size.width * 0.03, size.width * 0.008));
+            else drawCoverFilled(cover, size);
             [[UIColor colorWithWhite:0 alpha:0.48] setFill];
             UIRectFill(full);
             drawScrim(size, 0.10, 0.45);
@@ -1617,6 +1628,8 @@ static UIImage *drawLyricArtwork(CGSize size, NSString *prev, NSString *current,
 // words fill at the speed they are sung.
 static BOOL styleAnimates(NSInteger style) {
     switch (style) {
+        case SGLyricArtworkPoster:
+        case SGLyricArtworkPlain:
         case SGLyricArtworkAura:
         case SGLyricArtworkGradient:
         case SGLyricArtworkRecord:

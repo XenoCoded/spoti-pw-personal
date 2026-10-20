@@ -44,9 +44,12 @@ static void tintTree(UIView *view, UIColor *color) {
 static void refreshTint(void) {
     UIColor *color = SGAppTintColor();
     if (!color) return;
-    for (UIWindow *window in UIApplication.sharedApplication.windows) {
-        window.tintColor = color;
-        tintTree(window, color);
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+            window.tintColor = color;
+            tintTree(window, color);
+        }
     }
 }
 

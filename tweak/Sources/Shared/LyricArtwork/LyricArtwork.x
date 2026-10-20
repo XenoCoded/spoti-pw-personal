@@ -15,12 +15,19 @@
 #import "Core/SGCore.h"
 #import "Headers/SPTPlayer.h"
 #import "LyricArtwork.h"
+#import "LyricClip.h"
+#import "Shared/LockScreenArtwork/LockScreenArtwork.h"
 #import "Shared/Lyrics/Lyrics.h"
 
 static NSObject *sg_lock;
+// The frame clock for clip renders: seconds into the line being drawn, or -1
+// when a still is being drawn and the player's own position rules.
+static double sg_frameTime = -1;
 static NSDictionary *sg_info;              // the last now playing info Spotify sent
 static MPMediaItemArtwork *sg_cover;       // Spotify's own artwork, the Poster's ground
 static MPMediaItemArtwork *sg_artwork;     // the lyric still currently offered
+static id sg_clipArtwork;                  // the line's clip as an animated artwork, once rendered
+static NSString *sg_clipFor;               // the line key sg_clipArtwork belongs to
 static NSString *sg_lineKey;               // track + line the offered still was drawn for
 
 // The cover drawn to fill a frame of `size`, the way `filled` does it in LockScreenArtwork.
@@ -113,7 +120,9 @@ static NSAttributedString *sungLine(SGKaraokeLine *line, NSString *text, UIFont 
     [out addAttributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: pending}
                  range:NSMakeRange(0, out.length)];
     if (!line || !out.length) return out;
-    NSInteger position = SGKaraokePositionMs();
+    // While a clip renders (LyricClip), the position is the frame's, not the
+    // player's: the sweep is drawn where the frame sits inside the line.
+    NSInteger position = sg_frameTime >= 0 ? line.start + (NSInteger)(sg_frameTime * 1000) : SGKaraokePositionMs();
     if (position < line.start) return out;
     if (position >= line.end && line.end > line.start) {
         [out addAttribute:NSForegroundColorAttributeName value:sung range:NSMakeRange(0, out.length)];
@@ -184,6 +193,42 @@ static void drawCoverInRect(UIImage *image, CGRect rect) {
 // The Record: black, a wash of the cover's colour, and the cover pressed as the
 // label of a vinyl disc — grooves, spindle hole and all — with the lines set
 // centred under it. A still cannot spin; the record is the look, not the motion.
+
+// The record itself, on transparency: vinyl, grooves, the cover as its label
+// and the spindle hole. Drawn once and turned by the clip frames.
+static UIImage *recordDiscImage(CGFloat diameter, UIImage *cover) {
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+    format.scale = 1;
+    format.opaque = NO;
+    return [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(diameter, diameter) format:format]
+        imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        CGRect disc = CGRectMake(0, 0, diameter, diameter);
+        [[UIColor colorWithWhite:0.06 alpha:1] setFill];
+        [[UIBezierPath bezierPathWithOvalInRect:disc] fill];
+        [[UIColor colorWithWhite:1 alpha:0.08] setStroke];
+        for (CGFloat inset = diameter * 0.05; inset < diameter * 0.28; inset += diameter * 0.032) {
+            UIBezierPath *ring = [UIBezierPath bezierPathWithOvalInRect:CGRectInset(disc, inset, inset)];
+            ring.lineWidth = 1.2;
+            [ring stroke];
+        }
+        if (cover) {
+            CGRect label = CGRectInset(disc, diameter * 0.295, diameter * 0.295);
+            CGContextSaveGState(context.CGContext);
+            [[UIBezierPath bezierPathWithOvalInRect:label] addClip];
+            drawCoverInRect(cover, label);
+            CGContextRestoreGState(context.CGContext);
+        }
+        CGRect hole = CGRectMake(diameter / 2 - diameter * 0.018, diameter / 2 - diameter * 0.018,
+                                 diameter * 0.036, diameter * 0.036);
+        [UIColor.blackColor setFill];
+        [[UIBezierPath bezierPathWithOvalInRect:hole] fill];
+        [[UIColor colorWithWhite:1 alpha:0.5] setStroke];
+        UIBezierPath *rim = [UIBezierPath bezierPathWithOvalInRect:hole];
+        rim.lineWidth = 1;
+        [rim stroke];
+    }];
+}
+
 static UIImage *drawRecordArtwork(CGSize size, NSString *prev, NSString *current, NSString *next,
                                   UIImage *cover, SGKaraokeLine *line, NSString *title, NSString *artist) {
     UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
@@ -200,29 +245,17 @@ static UIImage *drawRecordArtwork(CGSize size, NSString *prev, NSString *current
         }
         CGFloat diameter = size.width * 0.60;
         CGRect disc = CGRectMake((size.width - diameter) / 2, size.height * 0.06, diameter, diameter);
-        [[UIColor colorWithWhite:0.06 alpha:1] setFill];
-        [[UIBezierPath bezierPathWithOvalInRect:disc] fill];
-        [[UIColor colorWithWhite:1 alpha:0.08] setStroke];
-        for (CGFloat inset = diameter * 0.05; inset < diameter * 0.28; inset += diameter * 0.032) {
-            UIBezierPath *ring = [UIBezierPath bezierPathWithOvalInRect:CGRectInset(disc, inset, inset)];
-            ring.lineWidth = 1.2;
-            [ring stroke];
-        }
-        if (cover) {
-            CGRect label = CGRectInset(disc, diameter * 0.295, diameter * 0.295);
+        // The disc is its own image so a clip's frames can turn it (below).
+        UIImage *discImage = recordDiscImage(diameter, cover);
+        if (sg_frameTime >= 0) {
             CGContextSaveGState(context.CGContext);
-            [[UIBezierPath bezierPathWithOvalInRect:label] addClip];
-            drawCoverInRect(cover, label);
+            CGContextTranslateCTM(context.CGContext, CGRectGetMidX(disc), CGRectGetMidY(disc));
+            CGContextRotateCTM(context.CGContext, sg_frameTime * (2 * M_PI / 1.8));   // a record's 33⅓ rpm
+            [discImage drawInRect:CGRectMake(-diameter / 2, -diameter / 2, diameter, diameter)];
             CGContextRestoreGState(context.CGContext);
+        } else {
+            [discImage drawInRect:disc];
         }
-        CGRect hole = CGRectMake(size.width / 2 - diameter * 0.018, disc.origin.y + diameter / 2 - diameter * 0.018,
-                                 diameter * 0.036, diameter * 0.036);
-        [UIColor.blackColor setFill];
-        [[UIBezierPath bezierPathWithOvalInRect:hole] fill];
-        [[UIColor colorWithWhite:1 alpha:0.5] setStroke];
-        UIBezierPath *rim = [UIBezierPath bezierPathWithOvalInRect:hole];
-        rim.lineWidth = 1;
-        [rim stroke];
 
         CGFloat floor = size.height * 0.97;
         CGFloat y = CGRectGetMaxY(disc) + size.height * 0.035;
@@ -574,7 +607,7 @@ static void drawMagazine(SGWCtx *c) {
     NSDateFormatter *month = [NSDateFormatter new];
     month.dateFormat = @"MMMM yyyy";
     NSString *small = [NSString stringWithFormat:@"Nº %ld      %@      %@", (long)(c->index + 1),
-                       c->title.uppercaseString, month.stringFromDate([NSDate date]).uppercaseString];
+                       c->title.uppercaseString, [[month stringFromDate:[NSDate date]] uppercaseString]];
     drawText(small, CGRectMake(margin, y, width, size.height * 0.02),
              [UIFont systemFontOfSize:size.height * 0.014 weight:UIFontWeightMedium],
              [UIColor colorWithWhite:1 alpha:0.85], NSTextAlignmentCenter);
@@ -702,9 +735,9 @@ static void drawCyberpunk(SGWCtx *c) {
     CGContextRef ctx = UIGraphicsGetCurrentContext();
     CGContextSetStrokeColorWithColor(ctx, neon.CGColor);
     CGContextSetLineWidth(ctx, 2);
-    CGContextStrokeRect(CGRectMake(size.width * 0.03, size.height * 0.025, size.width * 0.94, size.height * 0.95));
+    CGContextStrokeRect(ctx, CGRectMake(size.width * 0.03, size.height * 0.025, size.width * 0.94, size.height * 0.95));
     CGContextSetLineWidth(ctx, 1);
-    CGContextStrokeRect(CGRectMake(size.width * 0.045, size.height * 0.037, size.width * 0.91, size.height * 0.926));
+    CGContextStrokeRect(ctx, CGRectMake(size.width * 0.045, size.height * 0.037, size.width * 0.91, size.height * 0.926));
     CGFloat margin = size.width * 0.09, width = size.width - 2 * margin;
     CGFloat y = size.height * 0.065;
     drawText([NSString stringWithFormat:@"%@ — %@", c->title.uppercaseString, c->artist.uppercaseString],
@@ -830,6 +863,11 @@ static void drawMatrix(SGWCtx *c) {
     CGFloat column = size.width * 0.052;
     for (CGFloat x = size.width * 0.02; x < size.width; x += column) {
         CGFloat startY = -nextRand() * size.height * 0.5;
+        if (sg_frameTime >= 0) {
+            // The rain falls while a clip renders: each column at its own pace.
+            CGFloat fall = sg_frameTime * size.height * (0.07 + nextRand() * 0.11);
+            startY += fmod(fall, size.height * 1.2);
+        }
         NSInteger length = 6 + (NSInteger)(nextRand() * 16);
         for (NSInteger i = 0; i < length; i++) {
             unichar ch = [glyphs characterAtIndex:(NSUInteger)(nextRand() * glyphs.length) % glyphs.length];
@@ -902,6 +940,7 @@ static void drawStickers(SGWCtx *c) {
     CGFloat y = (size.height - totalHeight) / 2;
     CGContextRef ctx = UIGraphicsGetCurrentContext();
     BOOL blackLabel = nextRand() > 0.5;
+    NSInteger labelAt = 0;
     for (NSArray *aRow in rows) {
         CGFloat widthOfRow = 0;
         for (NSArray *item in aRow) widthOfRow += [item[1] doubleValue] + gap;
@@ -912,6 +951,15 @@ static void drawStickers(SGWCtx *c) {
             CGContextSaveGState(ctx);
             CGContextTranslateCTM(ctx, x + w / 2, y + rowHeight / 2);
             CGContextRotateCTM(ctx, (nextRand() - 0.5) * 0.13);
+            if (sg_frameTime >= 0) {
+                // The labels pop in one by one while a clip renders, with a
+                // little overshoot as each lands (an ease-out-back).
+                double local = MIN(1, MAX(0, (sg_frameTime - labelAt * 0.07) / 0.22));
+                double back = 1 + 2.7 * pow(local - 1, 3) + 1.7 * pow(local - 1, 2);
+                CGFloat scale = local <= 0 ? 0.001 : (CGFloat)back;
+                CGContextScaleCTM(ctx, scale, scale);
+            }
+            labelAt++;
             fillRect(CGRectMake(-w / 2, -rowHeight / 2, w, rowHeight), blackLabel ? [UIColor colorWithWhite:0.05 alpha:1] : UIColor.whiteColor);
             drawText(item[0], CGRectMake(-w / 2, -rowHeight / 2 + padY * 0.7, w, rowHeight), font,
                      blackLabel ? UIColor.whiteColor : [UIColor colorWithWhite:0.05 alpha:1], NSTextAlignmentCenter);
@@ -945,7 +993,7 @@ static void drawReceipt(SGWCtx *c) {
              monoFont(size.height * 0.018, UIFontWeightRegular), ink, NSTextAlignmentCenter);
     y += size.height * 0.045;
     CGContextRef ctx = UIGraphicsGetCurrentContext();
-    void (^dashed)(CGFloat yy) = ^{
+    void (^dashed)(CGFloat yy) = ^(CGFloat yy) {
         CGContextSaveGState(ctx);
         CGContextSetStrokeColorWithColor(ctx, grey.CGColor);
         CGContextSetLineWidth(ctx, 1.5);
@@ -1086,7 +1134,7 @@ static void drawRGBSplit(SGWCtx *c) {
     CGFloat margin = size.width * 0.07, width = size.width - 2 * margin;
     CGFloat h = textHeight(shout, font, width);
     CGFloat y = size.height * 0.42;
-    CGFloat off = size.width * 0.012;
+    CGFloat off = size.width * 0.012 * (sg_frameTime >= 0 ? 0.6 + 0.6 * sin(sg_frameTime * 3.9) : 1);
     drawText(shout, CGRectMake(margin - off, y, width, h + 4), font, [UIColor colorWithRed:1 green:0.15 blue:0.2 alpha:0.85], NSTextAlignmentLeft);
     drawText(shout, CGRectMake(margin + off, y, width, h + 4), font, [UIColor colorWithRed:0.1 green:0.9 blue:1 alpha:0.85], NSTextAlignmentLeft);
     drawText(shout, CGRectMake(margin, y, width, h + 4), font, [UIColor colorWithWhite:1 alpha:0.55], NSTextAlignmentLeft);
@@ -1487,6 +1535,114 @@ static UIImage *drawLyricArtwork(CGSize size, NSString *prev, NSString *current,
     }];
 }
 
+#pragma mark - the moving version (Batch 8)
+
+// The styles that move, and how long a loop each wants: the ambient ones loop
+// every three seconds; the sweep styles take their line's own length, so the
+// words fill at the speed they are sung.
+static BOOL styleAnimates(NSInteger style) {
+    switch (style) {
+        case SGLyricArtworkAura:
+        case SGLyricArtworkGradient:
+        case SGLyricArtworkRecord:
+        case SGLyricArtworkMatrix:
+        case SGLyricArtworkStickers:
+        case SGLyricArtworkRGBSplit:
+            return YES;
+        default:
+            return NO;
+    }
+}
+
+static double clipSeconds(NSInteger style, SGKaraokeLine *line) {
+    if ((style == SGLyricArtworkAura || style == SGLyricArtworkGradient) && line && line.end > line.start) {
+        return MIN(5, MAX(2, (line.end - line.start) / 1000.0));
+    }
+    return 3;
+}
+
+// One frame of a clip: the same draws as the stills, under the frame clock.
+static UIImage *drawClipFrame(NSInteger style, CGSize size, NSString *prev, NSString *current, NSString *next,
+                              UIImage *coverImage, SGKaraokeLine *line, NSString *title, NSString *artist,
+                              NSInteger index, NSInteger count, NSInteger prevStart, NSInteger nextStart,
+                              double duration, double t) {
+    UIImage *image;
+    @synchronized (sg_lock) {
+        sg_frameTime = t;
+        if (style == SGLyricArtworkRecord) {
+            image = drawRecordArtwork(size, prev, current, next, coverImage, line, title, artist);
+        } else if (style >= SGLyricArtworkTwitter) {
+            image = drawWorkshopArtwork(style, size, prev, current, next, coverImage, line, title, artist,
+                                        index, count, prevStart, nextStart, duration);
+        } else {
+            image = drawLyricArtwork(size, prev, current, next, style, coverImage, line, title, artist);
+        }
+        sg_frameTime = -1;
+    }
+    return image;
+}
+
+// The clip as the system takes it, the base's own construction (LockScreenArtwork.x):
+// a preview image it can show at once and the file it plays.
+static id clipArtworkFor(NSString *artworkID, NSURL *file, MPMediaItemArtwork *still) {
+    if (@available(iOS 26.0, *)) {
+        return [[MPMediaItemAnimatedArtwork alloc] initWithArtworkID:artworkID
+            previewImageRequestHandler:^(CGSize size, void (^done)(UIImage *image)) {
+                done(still ? [still imageWithSize:size] : nil);
+            }
+            videoAssetFileURLRequestHandler:^(CGSize size, void (^done)(NSURL *url)) {
+                done(file);
+            }];
+    }
+    return nil;
+}
+
+static void resend(void);
+
+// Called from the tick for every new line: publish the line's clip if one is
+// rendered or cached, and set the render going if not. The still is up either
+// way, so a line is never waiting on its clip to show something.
+static void offerClip(NSString *lineKey, NSInteger style, SGKaraokeLine *line,
+                      NSString *prev, NSString *current, NSString *next,
+                      MPMediaItemArtwork *cover, NSString *title, NSString *artist,
+                      NSInteger index, NSInteger count, NSInteger prevStart, NSInteger nextStart,
+                      double duration) {
+    if (!SGFlag(SGKeyLyricArtworkAnimated, NO) || !SGAnimatedArtworkAvailable() || !styleAnimates(style)) {
+        if (sg_clipArtwork) {
+            sg_clipArtwork = nil;
+            sg_clipFor = nil;
+        }
+        return;
+    }
+    NSString *clipKey = [NSString stringWithFormat:@"%@-%ld", lineKey, (long)style];
+    if ([clipKey isEqualToString:sg_clipFor]) return;
+    sg_clipFor = clipKey;
+    sg_clipArtwork = nil;
+    MPMediaItemArtwork *still = sg_artwork;
+    void (^publish)(NSURL *) = ^(NSURL *file) {
+        if (!file) return;
+        id clip = clipArtworkFor(clipKey, file, still);
+        if (!clip) return;
+        @synchronized (sg_lock) { sg_clipArtwork = clip; }
+        SGLog(@"lyric artwork: clip up for %@", clipKey);
+        resend();
+    };
+    NSURL *cached = SGLyricClipCachedFile(clipKey);
+    if (cached) {
+        publish(cached);
+        return;
+    }
+    UIImage *coverImage = cover ? [cover imageWithSize:CGSizeMake(720, 960)] : nil;
+    SGLyricClipRender(clipKey, CGSizeMake(720, 960), 20, clipSeconds(style, line),
+        ^UIImage *(double t) {
+            return drawClipFrame(style, CGSizeMake(720, 960), prev, current, next, coverImage, line,
+                                 title, artist, index, count, prevStart, nextStart, duration, t);
+        },
+        ^(NSURL *file) {
+            if ([sg_clipFor isEqualToString:clipKey]) publish(file);
+        });
+}
+
 // Spotify's info again, so the system picks up the still that has just been drawn; this
 // feature's own hook below puts the still in on the way out.
 static void resend(void) {
@@ -1496,8 +1652,10 @@ static void resend(void) {
 }
 
 static void clearArtwork(void) {
-    if (!sg_artwork) return;
+    if (!sg_artwork && !sg_clipArtwork) return;
     sg_artwork = nil;
+    sg_clipArtwork = nil;
+    sg_clipFor = nil;
     sg_lineKey = nil;
     SGLog(@"lyric artwork: cleared, the cover is back");
     resend();
@@ -1539,19 +1697,23 @@ static void tick(void) {
     @synchronized (sg_lock) { cover = sg_cover; }
     sg_artwork = [[MPMediaItemArtwork alloc] initWithBoundsSize:CGSizeMake(900, 1200)
         requestHandler:^UIImage *(CGSize size) {
-            UIImage *coverImage = cover ? [cover imageWithSize:size] : nil;
-            if (style == SGLyricArtworkRecord) {
-                return drawRecordArtwork(size, prev, current, next, coverImage, line, title, artist);
+            @synchronized (sg_lock) {
+                UIImage *coverImage = cover ? [cover imageWithSize:size] : nil;
+                if (style == SGLyricArtworkRecord) {
+                    return drawRecordArtwork(size, prev, current, next, coverImage, line, title, artist);
+                }
+                if (style == SGLyricArtworkChat) {
+                    return drawChatArtwork(size, prev, current, next, coverImage, title, artist);
+                }
+                if (style >= SGLyricArtworkTwitter) {
+                    return drawWorkshopArtwork(style, size, prev, current, next, coverImage, line, title, artist,
+                                               lineIndex, lineCount, prevStart, nextStart, duration);
+                }
+                return drawLyricArtwork(size, prev, current, next, style, coverImage, line, title, artist);
             }
-            if (style == SGLyricArtworkChat) {
-                return drawChatArtwork(size, prev, current, next, coverImage, title, artist);
-            }
-            if (style >= SGLyricArtworkTwitter) {
-                return drawWorkshopArtwork(style, size, prev, current, next, coverImage, line, title, artist,
-                                           lineIndex, lineCount, prevStart, nextStart, duration);
-            }
-            return drawLyricArtwork(size, prev, current, next, style, coverImage, line, title, artist);
         }];
+    offerClip(key, style, line, prev, current, next, cover, title, artist,
+              lineIndex, lineCount, prevStart, nextStart, duration);
     SGLog(@"lyric artwork: %@ — %@", trackID, current);
     resend();
 }
@@ -1559,19 +1721,26 @@ static void tick(void) {
 %hook MPNowPlayingInfoCenter
 - (void)setNowPlayingInfo:(NSDictionary *)info {
     MPMediaItemArtwork *artwork;
+    id clip;
     @synchronized (sg_lock) {
         id theirs = info[MPMediaItemPropertyArtwork];
         if (theirs && theirs != sg_artwork) sg_cover = theirs;
         sg_info = info;
         artwork = sg_artwork;
+        clip = sg_clipArtwork;
     }
-    if (artwork && info[MPMediaItemPropertyArtwork] != artwork) {
-        NSMutableDictionary *swapped = [info mutableCopy];
+    NSDictionary *shown = info;
+    if (artwork && shown[MPMediaItemPropertyArtwork] != artwork) {
+        NSMutableDictionary *swapped = [shown mutableCopy];
         swapped[MPMediaItemPropertyArtwork] = artwork;
-        %orig(swapped);
-        return;
+        shown = swapped;
     }
-    %orig;
+    if (clip) {
+        static NSString *animatedKey;
+        if (!animatedKey) animatedKey = SGAnimatedArtworkKey(NULL);
+        shown = SGArtworkInInfo(shown, clip, animatedKey);
+    }
+    %orig(shown);
 }
 %end
 

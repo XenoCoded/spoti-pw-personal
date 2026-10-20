@@ -1,0 +1,161 @@
+// The clip writer: AVAssetWriter fed pixel buffers, one per frame, each frame a
+// UIImage the caller draws. The writer's queue is serial, so two lines' clips
+// never render at once — a line change mid-render leaves the older render to
+// finish into the cache, where it does no harm and may serve a replay.
+#import <AVFoundation/AVFoundation.h>
+#import <CoreMedia/CoreMedia.h>
+#import "Core/SGCore.h"
+#import "LyricClip.h"
+
+static const NSUInteger kKeptClips = 60;
+
+static dispatch_queue_t clipQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ queue = dispatch_queue_create("spoti.pw lyric clips", DISPATCH_QUEUE_SERIAL); });
+    return queue;
+}
+
+static NSMutableSet<NSString *> *rendering(void) {
+    static NSMutableSet<NSString *> *set;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ set = [NSMutableSet set]; });
+    return set;
+}
+
+static NSString *clipDirectory(void) {
+    NSString *caches = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES).firstObject;
+    NSString *directory = [[caches stringByAppendingPathComponent:@"spoti.pw"] stringByAppendingPathComponent:@"LyricClips"];
+    if (![NSFileManager.defaultManager fileExistsAtPath:directory]) {
+        [NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil];
+    }
+    return directory;
+}
+
+static NSString *clipPath(NSString *key) {
+    NSString *safe = [key stringByReplacingOccurrencesOfString:@"/" withString:@"-"];
+    return [[clipDirectory() stringByAppendingPathComponent:safe] stringByAppendingPathExtension:@"mp4"];
+}
+
+NSURL *SGLyricClipCachedFile(NSString *key) {
+    NSString *path = clipPath(key);
+    return [NSFileManager.defaultManager fileExistsAtPath:path] ? [NSURL fileURLWithPath:path] : nil;
+}
+
+static void prune(void) {
+    NSFileManager *files = NSFileManager.defaultManager;
+    NSMutableArray<NSURL *> *urls = [NSMutableArray array];
+    for (NSString *name in [files contentsOfDirectoryAtPath:clipDirectory() error:nil]) {
+        if ([name.pathExtension isEqualToString:@"mp4"]) {
+            [urls addObject:[NSURL fileURLWithPath:[clipDirectory() stringByAppendingPathComponent:name]]];
+        }
+    }
+    if (urls.count <= kKeptClips) return;
+    [urls sortUsingComparator:^NSComparisonResult(NSURL *a, NSURL *b) {
+        NSDate *da = [a resourceValuesForKeys:@[NSURLContentModificationDateKey] error:nil][NSURLContentModificationDateKey];
+        NSDate *db = [b resourceValuesForKeys:@[NSURLContentModificationDateKey] error:nil][NSURLContentModificationDateKey];
+        return [da compare:db];
+    }];
+    for (NSUInteger i = 0; i < urls.count - kKeptClips; i++) [files removeItemAtURL:urls[i] error:nil];
+}
+
+void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duration,
+                       UIImage *(^frameAt)(double t), void (^completion)(NSURL *file)) {
+    dispatch_async(clipQueue(), ^{
+        @synchronized (rendering()) {
+            if ([rendering() containsObject:key]) {
+                dispatch_async(dispatch_get_main_queue(), ^{ completion(nil); });
+                return;
+            }
+            [rendering() addObject:key];
+        }
+        NSURL *file = SGLyricClipCachedFile(key);
+        if (file) {
+            @synchronized (rendering()) { [rendering() removeObject:key]; }
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(file); });
+            return;
+        }
+        NSURL *out = [NSURL fileURLWithPath:clipPath(key)];
+        // Render beside the destination and move in at the end, so a killed
+        // render never leaves a half clip standing as a finished one.
+        NSURL *partial = [out.URLByDeletingPathExtension URLByAppendingPathExtension:@"partial.mp4"];
+        [NSFileManager.defaultManager removeItemAtURL:partial error:nil];
+
+        NSError *error = nil;
+        AVAssetWriter *writer = [[AVAssetWriter alloc] initWithURL:partial fileType:AVFileTypeMPEG4 error:&error];
+        NSDictionary *videoSettings = @{
+            AVVideoCodecKey: AVVideoCodecTypeH264,
+            AVVideoWidthKey: @((NSInteger)size.width),
+            AVVideoHeightKey: @((NSInteger)size.height),
+            AVVideoCompressionPropertiesKey: @{AVVideoAverageBitRateKey: @(5 * 1024 * 1024)},
+        };
+        AVAssetWriterInput *input = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo
+                                                                        outputSettings:videoSettings];
+        input.expectsMediaDataInRealTime = NO;
+        NSDictionary *bufferAttributes = @{
+            (NSString *)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
+            (NSString *)kCVPixelBufferWidthKey: @((NSInteger)size.width),
+            (NSString *)kCVPixelBufferHeightKey: @((NSInteger)size.height),
+        };
+        AVAssetWriterInputPixelBufferAdaptor *adaptor =
+            [AVAssetWriterInputPixelBufferAdaptor assetWriterInputPixelBufferAdaptorWithAssetWriterInput:input
+                                                                     sourcePixelBufferAttributes:bufferAttributes];
+        BOOL ok = writer && [writer canAddInput:input];
+        if (ok) {
+            [writer addInput:input];
+            ok = [writer startWriting];
+            [writer startSessionAtSourceTime:kCMTimeZero];
+        }
+        CGColorSpaceRef rgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        NSInteger frames = MAX(2, (NSInteger)round(duration * fps));
+        for (NSInteger frame = 0; frame < frames && ok; frame++) {
+            while (!input.readyForMoreMediaData) {
+                if (writer.status != AVAssetWriterStatusWriting) { ok = NO; break; }
+                [NSThread sleepForTimeInterval:0.005];
+            }
+            if (!ok) break;
+            UIImage *image = frameAt(frame / (double)fps);
+            if (!image.CGImage) continue;
+            CVPixelBufferRef buffer = NULL;
+            if (CVPixelBufferPoolCreatePixelBuffer(NULL, adaptor.pixelBufferPool, &buffer) != kCVReturnSuccess || !buffer) {
+                ok = NO;
+                break;
+            }
+            CVPixelBufferLockBaseAddress(buffer, 0);
+            CGContextRef context = CGBitmapContextCreate(CVPixelBufferGetBaseAddress(buffer),
+                                                         size.width, size.height, 8,
+                                                         CVPixelBufferGetBytesPerRow(buffer), rgb,
+                                                         (CGBitmapInfo)(kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little));
+            if (context) {
+                CGContextTranslateCTM(context, 0, size.height);
+                CGContextScaleCTM(context, 1, -1);
+                CGContextDrawImage(context, CGRectMake(0, 0, size.width, size.height), image.CGImage);
+                CGContextRelease(context);
+            }
+            [adaptor appendPixelBuffer:buffer withPresentationTime:CMTimeMake(frame, (int32_t)fps)];
+            CVPixelBufferUnlockBaseAddress(buffer, 0);
+            CVPixelBufferRelease(buffer);
+        }
+        CGColorSpaceRelease(rgb);
+        if (!ok) {
+            [writer cancelWriting];
+            @synchronized (rendering()) { [rendering() removeObject:key]; }
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(nil); });
+            return;
+        }
+        [input markAsFinished];
+        [writer finishWritingWithCompletionHandler:^{
+            BOOL written = writer.status == AVAssetWriterStatusCompleted;
+            NSURL *done = nil;
+            if (written) {
+                [NSFileManager.defaultManager removeItemAtURL:out error:nil];
+                if ([NSFileManager.defaultManager moveItemAtURL:partial toURL:out error:nil]) done = out;
+            }
+            if (!done) [NSFileManager.defaultManager removeItemAtURL:partial error:nil];
+            @synchronized (rendering()) { [rendering() removeObject:key]; }
+            SGLog(@"lyric clip: %@ %@", key, done ? @"rendered" : @"failed");
+            if (done) dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ prune(); });
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(done); });
+        }];
+    });
+}

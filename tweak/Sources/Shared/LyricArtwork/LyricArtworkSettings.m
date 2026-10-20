@@ -12,8 +12,13 @@ NSArray<SGModRow *> *SGLyricArtworkRows(void) {
                                     @"Tiles", @"Polaroid", @"Subtitles", @"Line number"],
                                   SGLyricArtworkAura);
     style.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO); };
+    SGModRow *animated = SGOptionRow(@"Animated artwork",
+        @"On iOS 26, the styles that move — Aura, Gradient, Record, Matrix, Stickers, RGB split — play as a looping clip instead of a still. Renders once per line, then kept on the phone.",
+        SGKeyLyricArtworkAnimated);
+    animated.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO); };
     return @[
         SGOptionRow(@"Lyric artwork", @"The line being sung as the lock screen's artwork, full screen when the cover is tapped open. Turns the animated lock screen off while it is on.", SGKeyLyricArtwork),
         style,
+        animated,
     ];
 }

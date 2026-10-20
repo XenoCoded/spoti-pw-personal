@@ -551,7 +551,7 @@ static void drawTwitter(SGWCtx *c) {
     day.dateFormat = @"MMMM d, yyyy";
     NSDate *now = [NSDate date];
     seedRand(c->title);
-    NSInteger views = 12 + (NSInteger)(nextRand() * 880);
+    NSInteger views = 12 + (NSInteger)(nextRand() * 880) + (sg_frameTime >= 0 ? (NSInteger)(sg_frameTime * 2.5) : 0);
     drawText([NSString stringWithFormat:@"%@ · %@ · %ldK Views", [clock stringFromDate:now], [day stringFromDate:now], (long)views],
              CGRectMake(margin, y, width, size.height * 0.025),
              [UIFont systemFontOfSize:size.height * 0.018], [UIColor colorWithWhite:1 alpha:0.45], NSTextAlignmentLeft);
@@ -603,7 +603,10 @@ static void drawCoverInLetters(SGWCtx *c) {
 // the headline and its translation as the standfirst.
 static void drawMagazine(SGWCtx *c) {
     CGSize size = c->size;
-    if (c->cover) drawCoverFilled(c->cover, size);
+    if (c->cover) {
+        if (sg_frameTime >= 0) drawCoverInRect(c->cover, breathingRect(CGRectMake(0, 0, size.width, size.height), size.width * 0.025, size.width * 0.006));
+        else drawCoverFilled(c->cover, size);
+    }
     else fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithWhite:0.1 alpha:1]);
     drawScrim(size, 0.35, 0.45);
     CGFloat margin = size.width * 0.07, width = size.width - 2 * margin;
@@ -669,7 +672,9 @@ static void drawDuotone(SGWCtx *c) {
         [map setValue:[CIImage imageWithCGImage:c->cover.CGImage] forKey:kCIInputImageKey];
         [map setValue:[CIImage imageWithCGImage:strip.CGImage] forKey:@"inputGradientImage"];
         UIImage *toned = ciResult(c->cover, map);
-        if (toned) drawCoverFilled(toned, size);
+        if (sg_frameTime >= 0) {
+            drawCoverInRect(toned ?: c->cover, breathingRect(CGRectMake(0, 0, size.width, size.height), size.width * 0.02, size.width * 0.012));
+        } else if (toned) drawCoverFilled(toned, size);
         else drawCoverFilled(c->cover, size);
     }
     drawScrim(size, 0.0, 0.35);
@@ -1050,6 +1055,13 @@ static void drawReceipt(SGWCtx *c) {
         CGFloat bw = 1.5 + nextRand() * 4.5;
         if (nextRand() > 0.35) fillRect(CGRectMake(bx, barcodeY, bw, size.height * 0.045), ink);
         bx += bw + 1.5 + nextRand() * 3;
+    }
+    if (sg_frameTime >= 0 && sg_frameTime < 1.5) {
+        // Still printing: below the frontier there is only the black the
+        // slip sits on, so the page reads as paper arriving line by line.
+        CGFloat frontier = paper.origin.y + paper.size.height * MIN(1, sg_frameTime / 1.5);
+        fillRect(CGRectMake(paper.origin.x, frontier, paper.size.width,
+                            paper.origin.y + paper.size.height - frontier), UIColor.blackColor);
     }
 }
 
@@ -1592,6 +1604,10 @@ static BOOL styleAnimates(NSInteger style) {
         case SGLyricArtworkTiles:
         case SGLyricArtworkPolaroid:
         case SGLyricArtworkLineNumber:
+        case SGLyricArtworkReceipt:
+        case SGLyricArtworkTwitter:
+        case SGLyricArtworkMagazine:
+        case SGLyricArtworkDuotone:
             return YES;
         default:
             return NO;

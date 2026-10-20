@@ -15,3 +15,6 @@
 
 @class SGModRow;
 NSArray<SGModRow *> *SGSleepTimerRows(void);
+// Choose from anywhere (the gesture grid): sets the choice and clears the
+// last arming, so the countdown starts from this moment.
+void SGSleepTimerChoose(NSInteger choice);

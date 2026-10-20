@@ -11,6 +11,14 @@ static const NSInteger kSpans[] = {0, 15 * 60, 30 * 60, 45 * 60, 60 * 60, 0};
 // (the Live Activity's own figure, for the same reason).
 static const NSInteger kEndOfTrackMs = 1500;
 
+static void disarm(void);
+
+void SGSleepTimerChoose(NSInteger choice) {
+    disarm();
+    [NSUserDefaults.standardUserDefaults setInteger:choice forKey:SGKeySleepTimer];
+    SGLog(@"sleep timer: chosen %ld from a gesture", (long)choice);
+}
+
 static void disarm(void) {
     [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeySleepTimerEnd];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeySleepTimerArmed];

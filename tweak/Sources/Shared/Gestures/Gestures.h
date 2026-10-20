@@ -19,6 +19,9 @@ typedef NS_ENUM(NSInteger, SGGestureAction) {
     // Appended, never inserted: stored zones name their actions by this number.
     SGGestureSpeedUp,
     SGGestureSpeedDown,
+    // The sleep timer on a tap (Batch 17): set from the player, not a page.
+    SGGestureSleep30,
+    SGGestureSleepTrack,
 };
 
 NSArray<NSString *> *SGGestureActionNames(void);

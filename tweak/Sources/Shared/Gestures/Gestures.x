@@ -7,6 +7,7 @@
 #import "Core/SGCore.h"
 #import "Gestures.h"
 #import "Headers/SPTNowPlayingPlaybackController.h"
+#import "Shared/Player/SleepTimer.h"
 #import "Shared/Player/SpeedPitch.h"
 
 static __weak SPTNowPlayingPlaybackControllerImplementation *sg_player;
@@ -56,6 +57,12 @@ static void perform(SGGestureAction action) {
             break;
         case SGGestureSpeedDown:
             SGSetPlayerSpeed(MAX(0.5, SGPlayerSpeed() - 0.25));
+            break;
+        case SGGestureSleep30:
+            SGSleepTimerChoose(2);
+            break;
+        case SGGestureSleepTrack:
+            SGSleepTimerChoose(5);
             break;
     }
 }

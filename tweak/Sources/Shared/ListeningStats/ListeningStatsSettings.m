@@ -1,0 +1,100 @@
+// The Listening stats page: the switch, the totals, the tops, and the clear. Linked
+// from the Player page (App/Pages.m).
+#import "Core/SGCore.h"
+#import "Settings/SGModPage.h"
+#import "Settings/SGPageStyle.h"
+#import "ListeningStats.h"
+
+static void confirmClear(void) {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Clear listening stats?"
+        message:@"Every count this phone has kept is deleted, and counting starts again from nothing. Spotify's own history is untouched."
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Clear" style:UIAlertActionStyleDestructive
+                                            handler:^(UIAlertAction *action) { SGStatsClear(); }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [SGTopController() presentViewController:alert animated:YES completion:nil];
+}
+
+// The tracks with the most time on them, most first; an artist's time is the sum of
+// their tracks', there being no second store for them.
+static NSArray<NSDictionary *> *topTracks(NSDictionary *snapshot, NSUInteger limit) {
+    NSDictionary *tracks = snapshot[@"tracks"];
+    NSArray<NSString *> *uris = [tracks keysSortedByValueUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        return [b[@"seconds"] compare:a[@"seconds"]];
+    }];
+    NSMutableArray<NSDictionary *> *top = [NSMutableArray array];
+    for (NSString *uri in uris) {
+        if (top.count == limit) break;
+        if ([tracks[uri][@"seconds"] doubleValue] < 1) continue;
+        [top addObject:tracks[uri]];
+    }
+    return top;
+}
+
+static NSArray<NSDictionary *> *topArtists(NSDictionary *snapshot, NSUInteger limit) {
+    NSMutableDictionary<NSString *, NSMutableDictionary *> *byArtist = [NSMutableDictionary dictionary];
+    for (NSDictionary *entry in [snapshot[@"tracks"] allValues]) {
+        NSString *name = [entry[@"artist"] length] ? entry[@"artist"] : @"Unknown artist";
+        NSMutableDictionary *total = byArtist[name] ?: [@{@"name": name, @"seconds": @0, @"plays": @0} mutableCopy];
+        total[@"seconds"] = @([total[@"seconds"] doubleValue] + [entry[@"seconds"] doubleValue]);
+        total[@"plays"] = @([total[@"plays"] doubleValue] + [entry[@"plays"] doubleValue]);
+        byArtist[name] = total;
+    }
+    NSArray<NSDictionary *> *sorted = [byArtist.allValues sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        return [b[@"seconds"] compare:a[@"seconds"]];
+    }];
+    NSMutableArray<NSDictionary *> *top = [NSMutableArray array];
+    for (NSDictionary *artist in sorted) {
+        if (top.count == limit) break;
+        if ([artist[@"seconds"] doubleValue] < 1) continue;
+        [top addObject:artist];
+    }
+    return top;
+}
+
+UIViewController *SGListeningStatsPage(void) {
+    SGModRow *on = SGOptionRow(@"Listening stats", @"Counts time and plays on this phone only, in the app's own files. Nothing is sent anywhere.", SGKeyListeningStats);
+    NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObject:SGSection(nil, @[on])];
+    if (SGFlag(SGKeyListeningStats, NO)) {
+        NSDictionary *snapshot = SGStatsSnapshot();
+        double total = [snapshot[@"totalSeconds"] doubleValue];
+        NSDictionary *tracks = snapshot[@"tracks"];
+        NSInteger plays = 0;
+        for (NSDictionary *entry in tracks.allValues) plays += [entry[@"plays"] integerValue];
+        [sections addObject:SGSection(@"So far", @[
+            SGStatRow(@"Time listened", ^NSString *{ return SGStatsFormatTime(total); }),
+            SGStatRow(@"Songs played", ^NSString *{ return @(plays).stringValue; }),
+            SGStatRow(@"Different songs", ^NSString *{ return @(tracks.count).stringValue; }),
+        ])];
+        NSArray<NSDictionary *> *songs = topTracks(snapshot, 5);
+        if (songs.count) {
+            NSMutableArray<SGModRow *> *rows = [NSMutableArray array];
+            for (NSDictionary *entry in songs) {
+                NSString *title = [entry[@"title"] length] ? entry[@"title"] : @"Unknown track";
+                NSString *detail = [NSString stringWithFormat:@"%@ · %@ plays",
+                                    SGStatsFormatTime([entry[@"seconds"] doubleValue]), entry[@"plays"]];
+                [rows addObject:SGStatRow(title, ^NSString *{ return detail; })];
+            }
+            [sections addObject:SGSection(@"Top songs", rows)];
+        }
+        NSArray<NSDictionary *> *artists = topArtists(snapshot, 5);
+        if (artists.count) {
+            NSMutableArray<SGModRow *> *rows = [NSMutableArray array];
+            for (NSDictionary *artist in artists) {
+                NSString *detail = SGStatsFormatTime([artist[@"seconds"] doubleValue]);
+                [rows addObject:SGStatRow(artist[@"name"], ^NSString *{ return detail; })];
+            }
+            [sections addObject:SGSection(@"Top artists", rows)];
+        }
+        SGModRow *clear = SGActionRow(@"Clear listening stats", nil, ^{ confirmClear(); });
+        clear.color = SGRed();
+        [sections addObject:SGSection(nil, @[clear])];
+    }
+    return [[SGModPage alloc] initWithTitle:@"Listening stats" intro:SGRestartNote sections:sections footer:nil];
+}
+
+NSString *SGListeningStatsSummary(void) {
+    if (!SGFlag(SGKeyListeningStats, NO)) return @"Off";
+    double total = [SGStatsSnapshot()[@"totalSeconds"] doubleValue];
+    return total >= 60 ? SGStatsFormatTime(total) : @"Nothing yet";
+}

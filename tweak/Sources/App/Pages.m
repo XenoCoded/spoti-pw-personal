@@ -13,6 +13,7 @@
 #import "Native/Player/NowPlaying.h"
 #import "Shared/Haptics/Haptics.h"
 #import "Shared/LiveActivity/LiveActivity.h"
+#import "Shared/ListeningStats/ListeningStats.h"
 #import "Redesigned/Lyrics/LyricsText.h"
 #import "Redesigned/Navbar/Navbar.h"
 #import "Redesigned/NowPlayingBar/NowPlayingBar.h"
@@ -88,12 +89,15 @@ UIViewController *SGPlayerSettingsPage(void) {
     blocked.value = ^NSString *{
         return SGFlag(SGKeyArtistBlock, NO) ? @(SGBlockedArtists().count).stringValue : @"Off";
     };
+    SGModRow *stats = SGPageRow(@"Listening stats", ^UIViewController *{ return SGListeningStatsPage(); });
+    stats.value = ^NSString *{ return SGListeningStatsSummary(); };
     BOOL native = !SGRedesignedUIStored();
 
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObject:SGSection(nil, @[
         SGWithSymbol(SGPageRow(@"Gestures", ^UIViewController *{ return SGGesturesSettingsPage(); }), @"hand.tap"),
         SGWithSymbol(SGPageRow(@"Lyrics", ^UIViewController *{ return lyricsPage(); }), @"quote.bubble"),
         SGWithSymbol(blocked, @"person.crop.circle.badge.xmark"),
+        SGWithSymbol(stats, @"chart.bar"),
     ])];
     NSMutableArray<SGModRow *> *pages = [NSMutableArray array];
     if (native) {

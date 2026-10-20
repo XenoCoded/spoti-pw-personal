@@ -13,7 +13,7 @@ NSArray<SGModRow *> *SGLyricArtworkRows(void) {
                                   SGLyricArtworkAura);
     style.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO); };
     SGModRow *animated = SGOptionRow(@"Animated artwork",
-        @"On iOS 26, the styles that move — Aura, Gradient, Record, Matrix, Stickers, RGB split, Old TV, Holo, Starburst — play as a looping clip instead of a still. Renders once per line, then kept on the phone.",
+        @"On iOS 26, the styles that move — most styles — play as a looping clip instead of a still. Renders once per line, then kept on the phone.",
         SGKeyLyricArtworkAnimated);
     animated.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO); };
     return @[

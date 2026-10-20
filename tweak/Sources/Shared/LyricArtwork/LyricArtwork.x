@@ -341,6 +341,10 @@ static UIImage *drawChatArtwork(CGSize size, NSString *prev, NSString *current, 
         y = drawBubble(prev, y, size, NO, [UIColor colorWithWhite:1 alpha:0.13],
                        [UIColor colorWithWhite:1 alpha:0.65], pastFont);
         if (prev.length) y += size.height * 0.016;
+        if (sg_frameTime >= 0) {
+            double k = MIN(1, sg_frameTime / 0.35);
+            y += (1 - (1 - pow(1 - k, 3))) * size.height * 0.03;
+        }
         y = drawBubble(current, y, size, YES, accent, UIColor.whiteColor, nowFont);
         y += size.height * 0.016;
         drawBubble(next, y, size, NO, [UIColor colorWithWhite:1 alpha:0.09],
@@ -581,7 +585,10 @@ static void drawCoverInLetters(SGWCtx *c) {
     UIImage *mask = knockoutImage(size, ^{
         drawStackedWords(words, fontSize, size.height * 0.05, size, YES, UIColor.whiteColor);
     });
-    if (c->cover) drawCoverFilled(c->cover, size);
+    if (c->cover) {
+        if (sg_frameTime >= 0) drawCoverInRect(c->cover, breathingRect(CGRectMake(0, 0, size.width, size.height), size.width * 0.03, size.width * 0.008));
+        else drawCoverFilled(c->cover, size);
+    }
     // The fade down: darkness gathered over the cover before the letters cut in.
     drawScrim(size, 0.10, 0.88);
     [mask drawInRect:CGRectMake(0, 0, size.width, size.height)];
@@ -706,6 +713,11 @@ static void drawWordCollage(SGWCtx *c) {
         CGContextSaveGState(ctx);
         CGContextTranslateCTM(ctx, x + w / 2, y + h / 2);
         CGContextRotateCTM(ctx, (nextRand() - 0.5) * 0.35);
+        if (sg_frameTime >= 0) {
+            double k = MIN(1, MAX(0, (sg_frameTime - i * 0.06) / 0.3));
+            double e = 1 - pow(1 - k, 3);
+            CGContextTranslateCTM(ctx, 0, (1 - e) * size.height * 0.035 * ((i % 2) ? 1 : -1));
+        }
         fillRect(CGRectMake(-w / 2, -h / 2, w, h), paper);
         drawText(word, CGRectMake(-w / 2, -h / 2 + size.height * 0.004, w, h), font,
                  darkPaper ? UIColor.whiteColor : [UIColor colorWithWhite:0.08 alpha:1], NSTextAlignmentCenter);
@@ -738,6 +750,13 @@ static void drawCyberpunk(SGWCtx *c) {
     CGContextStrokeRect(ctx, CGRectMake(size.width * 0.03, size.height * 0.025, size.width * 0.94, size.height * 0.95));
     CGContextSetLineWidth(ctx, 1);
     CGContextStrokeRect(ctx, CGRectMake(size.width * 0.045, size.height * 0.037, size.width * 0.91, size.height * 0.926));
+    if (sg_frameTime >= 0) {
+        // Neon flicker: the outer frame re-strokes at a wavering alpha.
+        CGFloat hum = 0.55 + 0.45 * sin(sg_frameTime * 23) * sin(sg_frameTime * 7.3 + 1.7);
+        CGContextSetStrokeColorWithColor(ctx, [neon colorWithAlphaComponent:MAX(0.25, hum)].CGColor);
+        CGContextSetLineWidth(ctx, 2);
+        CGContextStrokeRect(ctx, CGRectMake(size.width * 0.03, size.height * 0.025, size.width * 0.94, size.height * 0.95));
+    }
     CGFloat margin = size.width * 0.09, width = size.width - 2 * margin;
     CGFloat y = size.height * 0.065;
     drawText([NSString stringWithFormat:@"%@ — %@", c->title.uppercaseString, c->artist.uppercaseString],
@@ -1159,7 +1178,7 @@ static void drawWindow(SGWCtx *c) {
     if (c->cover) {
         CGContextSaveGState(UIGraphicsGetCurrentContext());
         [arch addClip];
-        drawCoverInRect(c->cover, CGRectMake(frame.origin.x, frame.origin.y, frame.size.width, frame.size.height + radius * 0.4));
+        drawCoverInRect(c->cover, breathingRect(CGRectMake(frame.origin.x, frame.origin.y, frame.size.width, frame.size.height + radius * 0.4), size.width * 0.02, size.width * 0.006));
         CGContextRestoreGState(UIGraphicsGetCurrentContext());
     }
     [[UIColor colorWithWhite:0.15 alpha:1] setStroke];
@@ -1307,7 +1326,20 @@ static void drawTiles(SGWCtx *c) {
                 if (!piece) continue;
                 UIImage *tile = [UIImage imageWithCGImage:piece];
                 CGImageRelease(piece);
-                [tile drawInRect:CGRectMake(gx + col * (tileW + gap), gy + row * (tileH + gap), tileW, tileH)];
+                CGRect tileRect = CGRectMake(gx + col * (tileW + gap), gy + row * (tileH + gap), tileW, tileH);
+                if (sg_frameTime >= 0) {
+                    double k = MIN(1, MAX(0, (sg_frameTime - (row * 4 + col) * 0.045) / 0.3));
+                    double e = 1 - pow(1 - k, 3);
+                    CGContextRef ctx = UIGraphicsGetCurrentContext();
+                    CGContextSaveGState(ctx);
+                    CGContextTranslateCTM(ctx, CGRectGetMidX(tileRect), CGRectGetMidY(tileRect));
+                    CGContextScaleCTM(ctx, MAX(0.001, e), 1);
+                    CGContextTranslateCTM(ctx, -CGRectGetMidX(tileRect), -CGRectGetMidY(tileRect));
+                    [tile drawInRect:tileRect];
+                    CGContextRestoreGState(ctx);
+                } else {
+                    [tile drawInRect:tileRect];
+                }
             }
         }
     }
@@ -1330,7 +1362,7 @@ static void drawPolaroid(SGWCtx *c) {
     CGContextSaveGState(ctx);
     CGPoint centre = CGPointMake(size.width / 2, size.height * 0.38);
     CGContextTranslateCTM(ctx, centre.x, centre.y);
-    CGContextRotateCTM(ctx, -0.045);
+    CGContextRotateCTM(ctx, -0.045 + (sg_frameTime >= 0 ? sin(sg_frameTime * (2 * M_PI / 5)) * 0.012 : 0));
     CGContextTranslateCTM(ctx, -centre.x, -centre.y);
     CGRect print = CGRectMake(size.width * 0.15, size.height * 0.09, size.width * 0.70, size.height * 0.58);
     fillRect(print, [UIColor colorWithRed:0.97 green:0.96 blue:0.94 alpha:1]);
@@ -1407,7 +1439,8 @@ static void drawLineNumber(SGWCtx *c) {
     fillRect(CGRectMake(margin, y, width, 3), [UIColor colorWithWhite:0 alpha:0.15]);
     double fraction = 0;
     if (c->duration > 0) {
-        NSInteger position = SGKaraokePositionMs();
+        NSInteger position = sg_frameTime >= 0 && c->line
+            ? c->line.start + (NSInteger)(sg_frameTime * 1000) : SGKaraokePositionMs();
         fraction = position >= 0 ? MIN(1, position / 1000.0 / c->duration) : 0;
     } else if (c->count > 0) {
         fraction = (c->index + 1) / (double)c->count;
@@ -1551,6 +1584,14 @@ static BOOL styleAnimates(NSInteger style) {
         case SGLyricArtworkOldTV:
         case SGLyricArtworkHolo:
         case SGLyricArtworkStarburst:
+        case SGLyricArtworkChat:
+        case SGLyricArtworkCoverInLetters:
+        case SGLyricArtworkWordCollage:
+        case SGLyricArtworkCyberpunk:
+        case SGLyricArtworkWindow:
+        case SGLyricArtworkTiles:
+        case SGLyricArtworkPolaroid:
+        case SGLyricArtworkLineNumber:
             return YES;
         default:
             return NO;

@@ -23,6 +23,28 @@ static NSMutableSet<NSString *> *rendering(void) {
     return set;
 }
 
+// Who is waiting on a key in flight. A line warmed ahead of time and then
+// sung needs its publish to survive: completions gather here and all fire
+// when the render lands, instead of the later caller being turned away.
+static NSMutableDictionary<NSString *, NSMutableArray<void (^)(NSURL *)> *> *waiters(void) {
+    static NSMutableDictionary<NSString *, NSMutableArray<void (^)(NSURL *)> *> *map;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ map = [NSMutableDictionary dictionary]; });
+    return map;
+}
+
+static void settle(NSString *key, NSURL *file) {
+    NSArray<void (^)(NSURL *)> *waiting;
+    @synchronized (rendering()) {
+        [rendering() removeObject:key];
+        waiting = [waiters()[key] copy];
+        [waiters() removeObjectForKey:key];
+    }
+    for (void (^completion)(NSURL *) in waiting) {
+        dispatch_async(dispatch_get_main_queue(), ^{ completion(file); });
+    }
+}
+
 static NSString *clipDirectory(void) {
     NSString *caches = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES).firstObject;
     NSString *directory = [[caches stringByAppendingPathComponent:@"spoti.pw"] stringByAppendingPathComponent:@"LyricClips"];
@@ -64,15 +86,16 @@ void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duratio
     dispatch_async(clipQueue(), ^{
         @synchronized (rendering()) {
             if ([rendering() containsObject:key]) {
-                dispatch_async(dispatch_get_main_queue(), ^{ completion(nil); });
+                if (!waiters()[key]) waiters()[key] = [NSMutableArray array];
+                [waiters()[key] addObject:completion];
                 return;
             }
             [rendering() addObject:key];
+            waiters()[key] = [NSMutableArray arrayWithObject:completion];
         }
         NSURL *file = SGLyricClipCachedFile(key);
         if (file) {
-            @synchronized (rendering()) { [rendering() removeObject:key]; }
-            dispatch_async(dispatch_get_main_queue(), ^{ completion(file); });
+            settle(key, file);
             return;
         }
         NSURL *out = [NSURL fileURLWithPath:clipPath(key)];
@@ -139,8 +162,7 @@ void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duratio
         CGColorSpaceRelease(rgb);
         if (!ok) {
             [writer cancelWriting];
-            @synchronized (rendering()) { [rendering() removeObject:key]; }
-            dispatch_async(dispatch_get_main_queue(), ^{ completion(nil); });
+            settle(key, nil);
             return;
         }
         [input markAsFinished];
@@ -152,10 +174,10 @@ void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duratio
                 if ([NSFileManager.defaultManager moveItemAtURL:partial toURL:out error:nil]) done = out;
             }
             if (!done) [NSFileManager.defaultManager removeItemAtURL:partial error:nil];
-            @synchronized (rendering()) { [rendering() removeObject:key]; }
             SGLog(@"lyric clip: %@ %@", key, done ? @"rendered" : @"failed");
             if (done) dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ prune(); });
-            dispatch_async(dispatch_get_main_queue(), ^{ completion(done); });
+            settle(key, done);
+            // The caller that started this render is a waiter like any other.
         }];
     });
 }

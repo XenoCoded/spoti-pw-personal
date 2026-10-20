@@ -94,6 +94,12 @@ static UIViewController *lyricsPage(void) {
     return [[SGModPage alloc] initWithTitle:@"Lyrics" intro:SGRestartNote sections:sections footer:nil];
 }
 
+// The Lyrics page, linked from the Mod Settings root since Batch 9 (it sat
+// inside Player before, a page deeper than it deserved).
+UIViewController *SGLyricsSettingsPage(void) {
+    return lyricsPage();
+}
+
 UIViewController *SGPlayerSettingsPage(void) {
     SGModRow *blocked = SGPageRow(@"Blocked artists", ^UIViewController *{ return SGArtistBlockSettingsPage(); });
     blocked.value = ^NSString *{
@@ -104,8 +110,6 @@ UIViewController *SGPlayerSettingsPage(void) {
     BOOL native = !SGRedesignedUIStored();
 
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObject:SGSection(nil, @[
-        SGWithSymbol(SGPageRow(@"Gestures", ^UIViewController *{ return SGGesturesSettingsPage(); }), @"hand.tap"),
-        SGWithSymbol(SGPageRow(@"Lyrics", ^UIViewController *{ return lyricsPage(); }), @"quote.bubble"),
         SGWithSymbol(blocked, @"person.crop.circle.badge.xmark"),
         SGWithSymbol(stats, @"chart.bar"),
     ])];
@@ -116,7 +120,6 @@ UIViewController *SGPlayerSettingsPage(void) {
     } else {
         [pages addObject:SGWithSymbol(SGPageRow(@"Now playing", ^UIViewController *{ return SGRNowPlayingBarSettingsPage(); }), @"rectangle.bottomthird.inset.filled")];
     }
-    [pages addObject:SGWithSymbol(SGPageRow(@"Lock screen widget", ^UIViewController *{ return SGLockScreenWidgetPage(); }), @"lock")];
     [sections addObject:SGSection(nil, pages)];
     if (native) [sections addObjectsFromArray:SGNativePlayerScreenSections()];
     // Vibrations hook Spotify's own controls and its audio, so they answer under either look.

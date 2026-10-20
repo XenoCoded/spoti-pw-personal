@@ -7,7 +7,9 @@ static NSArray<NSString *> *viewNames(void) {
     return @[@"Lyrics", @"Queue", @"Control menu"];
 }
 
-UIViewController *SGLiveActivitySettingsPage(void) {
+// The rows alone, so the Lock screen page can hold them beside the artwork
+// rows (Batch 9: one home for everything the lock screen shows).
+NSArray<SGModRow *> *SGLiveActivityRows(void) {
     SGModRow *on = SGOptionRow(@"Live Activity", nil, SGKeyLiveActivity);
     on.changed = ^(BOOL value) { SGSetLiveActivityEnabled(value); };
     SGModRow *view = SGChoiceRow(@"Shows", nil, SGKeyLiveActivityView, viewNames(), SGLiveActivityLyrics);
@@ -15,8 +17,12 @@ UIViewController *SGLiveActivitySettingsPage(void) {
                                  SGKeyLiveActivityIdleEnd,
                                  @[@"End after 5 minutes", @"End after 1 minute", @"Keep showing"],
                                  SGLiveActivityIdleEnd5Min);
+    return @[on, view, idle];
+}
+
+UIViewController *SGLiveActivitySettingsPage(void) {
     return [[SGModPage alloc] initWithTitle:@"Live Activity" intro:nil sections:@[
-        SGSection(nil, @[on, view, idle]),
+        SGSection(nil, SGLiveActivityRows()),
     ] footer:nil];
 }
 

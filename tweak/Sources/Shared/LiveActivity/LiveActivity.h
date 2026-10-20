@@ -21,6 +21,8 @@
 // Threading: main thread only.
 #import <Foundation/Foundation.h>
 
+@class SGModRow;
+
 #define SGKeyLiveActivity @"spotifyglass.liveActivity"
 // Which view it shows, the index into the page's list.
 #define SGKeyLiveActivityView @"spotifyglass.liveActivity.view"
@@ -51,5 +53,6 @@ void SGSetLiveActivityEnabled(BOOL on);
 @class UIViewController;
 // The Live Activity page: its switch and which view it shows.
 UIViewController *SGLiveActivitySettingsPage(void);
+NSArray<SGModRow *> *SGLiveActivityRows(void);
 // What the root's row reads out beside its chevron: the view shown, or Off.
 NSString *SGLiveActivitySummary(void);

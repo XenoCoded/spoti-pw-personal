@@ -50,16 +50,18 @@ static UIViewController *modSettingsPage(void) {
     audioEffects.value = ^NSString *{ return SGDSPSummary(); };
     // Home & Library holds only the native look's switches, so the redesign has no such page; the
     // Live Activity works under both, and only where ActivityKit's card does.
+    // Batch 9: one tap from here to everything. Lyrics, Gestures and the Lock
+    // screen used to sit inside Player (the lock screen's artwork two pages
+    // down); they are first-class pages now, and the Live Activity lives on
+    // the Lock screen page with the rest of what the lock screen shows.
     NSMutableArray<SGModRow *> *parts = [NSMutableArray arrayWithArray:@[
         pageRow(@"Navbar", @"dock.rectangle", ^UIViewController *{ return SGNavbarPage(); }),
         pageRow(@"Player", @"play.circle", ^UIViewController *{ return SGPlayerSettingsPage(); }),
+        pageRow(@"Lyrics", @"quote.bubble", ^UIViewController *{ return SGLyricsSettingsPage(); }),
+        pageRow(@"Gestures", @"hand.tap", ^UIViewController *{ return SGGesturesSettingsPage(); }),
+        pageRow(@"Lock screen", @"lock", ^UIViewController *{ return SGLockScreenSettingsPage(); }),
         audioEffects,
     ]];
-    if (@available(iOS 17.0, *)) {
-        SGModRow *liveActivity = pageRow(@"Live Activity", @"platter.filled.top.iphone", ^UIViewController *{ return SGLiveActivitySettingsPage(); });
-        liveActivity.value = ^NSString *{ return SGLiveActivitySummary(); };
-        [parts addObject:liveActivity];
-    }
     if (!SGRedesignedUIStored()) [parts addObject:pageRow(@"Home & Library", @"house", ^UIViewController *{ return SGHomeSettingsPage(); })];
     [sections addObjectsFromArray:@[
         SGAppearanceSection(),

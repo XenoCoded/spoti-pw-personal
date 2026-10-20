@@ -66,6 +66,10 @@ UIViewController *SGAppFontSettingsPage(void) {
     }
     return [[SGModPage alloc] initWithTitle:@"App font" intro:SGRestartNote sections:@[
         SGSection(@"Use", picks),
+        SGSection(@"Size", @[
+            SGChoiceRow(@"Text size", @"Scales all text, with the font picked above or Spotify's own.", SGKeyFontScale,
+                        @[@"90%", @"95%", @"100%", @"105%", @"110%", @"120%"], 2),
+        ]),
         SGSection(nil, @[SGActionRow(@"Import a font…", @"A .ttf or .otf file, kept in Documents/spoti.pw/Fonts", ^{ importFont(); })]),
     ] footer:@"Text Spotify draws without UIFont — some of its Encore labels — keeps Spotify's own face. Everything else takes the font picked here."];
 }

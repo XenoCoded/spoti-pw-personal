@@ -74,9 +74,16 @@ NSString *SGChosenFontPostScriptName(void) {
     return name;
 }
 
+CGFloat SGFontScaleFactor(void) {
+    static const CGFloat steps[] = {0.90, 0.95, 1.0, 1.05, 1.10, 1.20};
+    NSInteger index = SGInt(SGKeyFontScale, 2);
+    return steps[MIN(5, MAX(0, index))];
+}
+
 UIFont *SGAppFont(CGFloat size, BOOL bold) {
     NSString *file = SGChosenFontFile();
     if (!file) return nil;
+    size *= SGFontScaleFactor();
     CTFontDescriptorRef descriptor = descriptorOfFile(file);
     if (!descriptor) return nil;
     // Through the family name, so the bold asked for is the family's own bold face

@@ -10,6 +10,10 @@
 
 // The chosen font's file name in the library; unset is Spotify's own font.
 #define SGKeyAppFont @"spotifyglass.font"
+// The text size step (Batch 5): an index into 90/95/100/105/110/120 percent,
+// applied to whatever font is in use, Spotify's own included.
+#define SGKeyFontScale @"spotifyglass.font.scale"
+CGFloat SGFontScaleFactor(void);
 
 NSString *SGFontsDirectory(void);
 // The library's font files (.ttf, .otf), by name.

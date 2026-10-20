@@ -7,6 +7,11 @@ on:
         description: "Direct link to a decrypted Spotify IPA"
         required: true
         type: string
+      eevee_deb_url:
+        description: "Optional: direct link to an extra .deb to inject after the mod (e.g. EeveeSpotify). Leave empty to skip."
+        required: false
+        default: ""
+        type: string
       upload_method:
         description: "Where to put the result"
         default: artifacts
@@ -46,6 +51,19 @@ jobs:
           case "$(file --mime-type -b ipa/spotify.ipa)" in application/zip|application/x-ios-app) ;; *) echo "::error::Not an IPA"; exit 1 ;; esac
 
       - run: make release
+
+      # Personal-fork addition: optionally inject one extra .deb (Eevee) into the
+      # finished IPA as a second cyan pass, so the artifact is the same combined
+      # IPA this fork has always produced. The mod's own pipeline is untouched.
+      - name: Inject extra .deb (Eevee)
+        if: inputs.eevee_deb_url != ''
+        run: |
+          curl -fsSL "${{ inputs.eevee_deb_url }}" -o /tmp/extra.deb
+          IN="$(ls out/*.ipa | head -1)"
+          cyan -i "$IN" -o out/combined.ipa -f /tmp/extra.deb -w -s --overwrite
+          rm "$IN"
+          mv out/combined.ipa "$IN"
+          ls -lh out/
 
       - uses: actions/upload-artifact@v5
         if: inputs.upload_method != 'filebin'

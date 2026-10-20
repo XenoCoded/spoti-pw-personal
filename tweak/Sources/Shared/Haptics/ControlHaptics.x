@@ -230,6 +230,8 @@ static void gesturePerformed(SGGestureAction action) {
         case SGGestureRepeat: SGPlayFeedback(SGFeedbackToggle); break;
         case SGGestureSpeedUp:
         case SGGestureSpeedDown: SGPlayFeedback(SGFeedbackToggle); break;
+        case SGGestureSleep30:
+        case SGGestureSleepTrack: SGPlayFeedback(SGFeedbackToggle); break;
     }
 }
 

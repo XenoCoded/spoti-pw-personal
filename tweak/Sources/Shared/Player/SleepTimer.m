@@ -25,5 +25,19 @@ NSArray<SGModRow *> *SGSleepTimerRows(void) {
         }
         return name;
     };
-    return @[timer];
+    // One more quarter hour (Batch 34): the timer is about to land and
+    // sleep is not. The countdown reads the end key on every check, so
+    // pushing it out is the whole feature — no re-arming, no lost span.
+    SGModRow *extend = SGActionRow(@"Add 15 minutes", nil, ^{
+        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+        [defaults setDouble:[defaults doubleForKey:SGKeySleepTimerEnd] + 900 forKey:SGKeySleepTimerEnd];
+    });
+    extend.visible = ^BOOL {
+        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+        NSInteger choice = SGInt(SGKeySleepTimer, 0);
+        return choice >= 1 && choice <= 4
+            && [defaults integerForKey:SGKeySleepTimerArmed] == choice
+            && [defaults doubleForKey:SGKeySleepTimerEnd] > NSDate.date.timeIntervalSince1970;
+    };
+    return @[timer, extend];
 }

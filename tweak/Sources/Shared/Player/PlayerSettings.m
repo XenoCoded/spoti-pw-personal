@@ -41,6 +41,7 @@ UIViewController *SGLockScreenSettingsPage(void) {
 // system already watches; its state's `future` is the same list the Live
 // Activity reads its up-next from.
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/ListeningStats/ListeningStats.h"
 #import "PlayerState.h"
 #import "Headers/SPTPlayer.h"
 
@@ -83,6 +84,19 @@ static NSString *queueText(void) {
 }
 
 NSArray<SGModRow *> *SGQueueShareRows(void) {
+    // Your history with this track (Batch 44): the stats store already
+    // knows — the Player page is where the question occurs to anyone.
+    SGModRow *history = SGStatRow(@"Your history with this track", ^NSString *{
+        SPTPlayerState *state = SGPlayerState();
+        NSString *uri = state ? SGURIString(state.track.URI) : nil;
+        NSDictionary *entry = uri ? SGStatsSnapshot()[@"tracks"][uri] : nil;
+        if (![entry isKindOfClass:NSDictionary.class] || [entry[@"plays"] integerValue] == 0) return @"First listen";
+        return [NSString stringWithFormat:@"%@ plays · %@",
+            entry[@"plays"], SGStatsFormatTime([entry[@"seconds"] doubleValue])];
+    });
+    history.visible = ^BOOL {
+        return SGFlag(SGKeyListeningStats, NO) && SGPlayerState() != nil;
+    };
     SGModRow *link = SGStatActionRow(@"Copy link to this track",
         @"The open.spotify.com link, ready to send to anyone.",
         ^NSString *{
@@ -96,7 +110,7 @@ NSArray<SGModRow *> *SGQueueShareRows(void) {
             sg_linkCopiedAt = NSDate.date.timeIntervalSince1970;
         });
     link.visible = ^BOOL { return SGKaraokePlayingTrack().length > 0; };
-    return @[link, SGStatActionRow(@"Copy the queue as text",
+    return @[history, link, SGStatActionRow(@"Copy the queue as text",
         @"The playing song and what's up next, one a line, ready to paste anywhere.",
         ^NSString *{
             return NSDate.date.timeIntervalSince1970 - sg_copiedAt < 2.5 ? @"Copied ✓" : @"Copy";

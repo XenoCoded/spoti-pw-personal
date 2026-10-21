@@ -47,6 +47,7 @@ static dispatch_block_t sg_pendingRefresh;
 static void refreshTintSoon(void) {
     if (sg_pendingRefresh) dispatch_block_cancel(sg_pendingRefresh);
     sg_pendingRefresh = dispatch_block_create(DISPATCH_BLOCK_INHERIT_QOS_CLASS, ^{
+        sg_pendingRefresh = nil;
         refreshTint();
     });
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),

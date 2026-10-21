@@ -108,10 +108,10 @@ static UIViewController *(^builderForPage(NSString *pageTitle))(void) {
 
 #pragma mark - the search page
 
-@interface SGSettingsSearchPage : SGPage <UISearchBarDelegate>
+@interface SGSearchSettingsPage : SGPage <UISearchBarDelegate>
 @end
 
-@implementation SGSettingsSearchPage {
+@implementation SGSearchSettingsPage {
     UISearchBar *_bar;
     NSArray<SGSearchEntry *> *_shown;
 }
@@ -212,7 +212,7 @@ static UIViewController *(^builderForPage(NSString *pageTitle))(void) {
 @end
 
 UIViewController *SGSettingsSearchPage(void) {
-    return [SGSettingsSearchPage new];
+    return [SGSearchSettingsPage new];
 }
 
 #pragma mark - quick access

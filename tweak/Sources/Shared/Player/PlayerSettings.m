@@ -70,6 +70,13 @@ static NSString *queueText(void) {
             if (lines.count >= 21) break;
         }
     }
+    // The way in (Batch 51): whoever receives the queue usually wants
+    // the song that's playing right now first.
+    NSString *playingId = SGKaraokePlayingTrack();
+    if (playingId.length) {
+        [lines addObject:@""];
+        [lines addObject:[@"https://open.spotify.com/track/" stringByAppendingString:playingId]];
+    }
     // The other direction (Batch 26): what led here, most recent first.
     id reverse = [state respondsToSelector:@selector(reverse)] ? state.reverse : nil;
     if ([reverse isKindOfClass:NSArray.class] && ((NSArray *)reverse).count) {
@@ -118,7 +125,19 @@ NSArray<SGModRow *> *SGQueueShareRows(void) {
             sg_linkCopiedAt = NSDate.date.timeIntervalSince1970;
         });
     link.visible = ^BOOL { return SGKaraokePlayingTrack().length > 0; };
-    return @[history, link, SGStatActionRow(@"Copy the queue as text",
+    SGModRow *name = SGStatActionRow(@"Copy track name",
+        @"Title and artist as plain text.",
+        ^NSString *{ return @"Copy"; },
+        ^{
+            SPTPlayerState *state = SGPlayerState();
+            NSString *title = state.track.trackTitle;
+            if (!title.length) return;
+            NSString *artist = state.track.artistName.length
+                ? [@" — " stringByAppendingString:state.track.artistName] : @"";
+            UIPasteboard.generalPasteboard.string = [title stringByAppendingString:artist];
+        });
+    name.visible = link.visible;
+    return @[history, link, name, SGStatActionRow(@"Copy the queue as text",
         @"The playing song and what's up next, one a line, ready to paste anywhere.",
         ^NSString *{
             return NSDate.date.timeIntervalSince1970 - sg_copiedAt < 2.5 ? @"Copied ✓" : @"Copy";

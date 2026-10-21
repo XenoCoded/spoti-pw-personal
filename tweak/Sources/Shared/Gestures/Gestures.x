@@ -73,6 +73,9 @@ static void perform(SGGestureAction action) {
         case SGGestureSleepOff:
             SGSleepTimerChoose(0);
             break;
+        case SGGestureSleep15:
+            SGSleepTimerChoose(1);
+            break;
         case SGGestureSetA:
             SGABSetPointA();
             break;

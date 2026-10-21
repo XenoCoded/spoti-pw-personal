@@ -233,6 +233,7 @@ static void gesturePerformed(SGGestureAction action) {
         case SGGestureSleep30:
         case SGGestureSleepTrack: SGPlayFeedback(SGFeedbackToggle); break;
         case SGGestureSleepOff: SGPlayFeedback(SGFeedbackToggle); break;
+        case SGGestureSleep15: SGPlayFeedback(SGFeedbackToggle); break;
         case SGGestureSetA:
         case SGGestureSetB: SGPlayFeedback(SGFeedbackDetent); break;
         case SGGestureClearAB: SGPlayFeedback(SGFeedbackToggle); break;

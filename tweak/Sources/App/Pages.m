@@ -10,6 +10,7 @@
 #import "Shared/Player/PlayerSettings.h"
 #import "Shared/Player/SleepTimer.h"
 #import "Shared/Player/ABRepeat.h"
+#import "Shared/Player/Bookmark.h"
 #import "Native/Appearance/Appearance.h"
 #import "Native/Navbar/Navbar.h"
 #import "Native/NowPlayingBar/NowPlayingBar.h"
@@ -131,6 +132,7 @@ UIViewController *SGPlayerSettingsPage(void) {
     [sections addObjectsFromArray:SGVibrationsSections()];
     [sections addObject:SGSection(@"Sleep", SGSleepTimerRows())];
     [sections addObject:SGSection(@"Repeat", SGABRepeatRows())];
+    [sections addObject:SGSection(@"Bookmarks", SGBookmarkRows())];
     [sections addObject:SGSection(@"Queue", SGQueueShareRows())];
 
     return [[SGModPage alloc] initWithTitle:@"Player" intro:SGRestartNote sections:sections footer:nil];

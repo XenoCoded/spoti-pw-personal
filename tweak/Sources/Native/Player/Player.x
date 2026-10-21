@@ -104,6 +104,42 @@ static UIImage *coverInFront(UIScrollView *list) {
     return cover;
 }
 
+// The fluid drift (Batch 24): the still cover becomes a slow tide — two
+// loops of different lengths, one sliding, one breathing, so the pair never
+// visibly repeats. Transform only, so nothing is laid out per frame, and
+// the crossfade on a track change is untouched (it swaps the image, not the
+// layer's motion). Off, or Reduce Motion on, the cover stands still.
+static void applyFluidMotion(UIImageView *cover) {
+    BOOL fluid = backdropOn() && SGFlag(SGKeyPlayerBackdropFluid, NO)
+        && !UIAccessibilityIsReduceMotionEnabled();
+    CALayer *layer = cover.layer;
+    if (!fluid) {
+        if ([layer animationForKey:@"sg.fluid.slide"]) {
+            [layer removeAnimationForKey:@"sg.fluid.slide"];
+            [layer removeAnimationForKey:@"sg.fluid.breathe"];
+            cover.transform = CGAffineTransformIdentity;
+        }
+        return;
+    }
+    if ([layer animationForKey:@"sg.fluid.slide"]) return;
+    CABasicAnimation *slide = [CABasicAnimation animationWithKeyPath:@"transform.translation"];
+    slide.fromValue = [NSValue valueWithCGPoint:CGPointMake(-16, -9)];
+    slide.toValue = [NSValue valueWithCGPoint:CGPointMake(16, 11)];
+    slide.duration = 27;
+    slide.autoreverses = YES;
+    slide.repeatCount = HUGE_VALF;
+    slide.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+    [layer addAnimation:slide forKey:@"sg.fluid.slide"];
+    CABasicAnimation *breathe = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
+    breathe.fromValue = @1.16;
+    breathe.toValue = @1.26;
+    breathe.duration = 19;
+    breathe.autoreverses = YES;
+    breathe.repeatCount = HUGE_VALF;
+    breathe.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+    [layer addAnimation:breathe forKey:@"sg.fluid.breathe"];
+}
+
 static UIView *backdropIn(UIView *plane) {
     UIView *backdrop = objc_getAssociatedObject(plane, &kBackdropKey);
     if (backdrop) return backdrop;
@@ -125,6 +161,7 @@ static UIView *backdropIn(UIView *plane) {
     if (!plane || plane.bounds.size.height < 200) return;
     sg_npvBackdropRoot = plane;
     UIView *backdrop = backdropIn(plane);
+    applyFluidMotion(SGBackdropImageView(backdrop));
     for (UIView *sub in plane.subviews) {
         if (sub != backdrop) SGStripBackgrounds(sub);
     }

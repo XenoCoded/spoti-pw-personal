@@ -4,8 +4,10 @@
 // list keeps running underneath and comes back the moment a track has no synced lyrics.
 #import "Core/SGCore.h"
 #import "SGRKaraokeView.h"
+#import "LyricsText.h"
+#import "Redesigned/Kit/SGRBridges.h"
 
-static char kKaraokeKey;
+static char kKaraokeKey, kCoverKey;
 
 %hook _TtC32Lyrics_FullscreenElementPageImpl10LyricsView
 - (void)layoutSubviews {
@@ -19,7 +21,35 @@ static char kKaraokeKey;
     }
     if (view.superview == host) [host bringSubviewToFront:view];
     else [host addSubview:view];
-    view.frame = host.bounds;
+    // Landscape (Batch 24): sideways with the switch on, the lyrics take
+    // the right-hand three-fifths and the cover stands on the left — the
+    // karaoke view lays its lines out from its own bounds, so a narrower
+    // frame is the whole change. Portrait, or the switch off, it has the
+    // page to itself as before.
+    BOOL split = SGFlag(SGRKeyLandscapeLyrics, NO) && host.bounds.size.width > host.bounds.size.height;
+    UIImageView *cover = objc_getAssociatedObject(host, &kCoverKey);
+    if (split) {
+        if (!cover) {
+            cover = [[UIImageView alloc] initWithFrame:CGRectZero];
+            cover.contentMode = UIViewContentModeScaleAspectFill;
+            cover.clipsToBounds = YES;
+            cover.layer.cornerRadius = 18;
+            cover.layer.cornerCurve = kCACornerCurveContinuous;
+            objc_setAssociatedObject(host, &kCoverKey, cover, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            [host addSubview:cover];
+        }
+        cover.hidden = NO;
+        UIImage *art = SGRNowPlayingArtwork(NULL, NULL);
+        if (art && cover.image != art) cover.image = art;
+        CGFloat zone = host.bounds.size.width * 0.40;
+        CGFloat side = MIN(zone - 56, host.bounds.size.height - 120);
+        cover.frame = CGRectMake((zone - side) / 2, (host.bounds.size.height - side) / 2, side, side);
+        view.frame = CGRectMake(zone, 0, host.bounds.size.width - zone, host.bounds.size.height);
+        [host bringSubviewToFront:view];
+    } else {
+        cover.hidden = YES;
+        view.frame = host.bounds;
+    }
     [view syncSiblings];
 }
 %end

@@ -5,6 +5,8 @@
 
 #define SGKeyPlayer @"spotifyglass.player"
 #define SGKeyPlayerBackdrop @"spotifyglass.playerBackdrop"
+// The backdrop cover drifts, very slowly (Batch 24).
+#define SGKeyPlayerBackdropFluid @"spotifyglass.playerBackdrop.fluid"
 #define SGKeyLyricsCard @"spotifyglass.lyricsCard"
 
 // Parts of the player to hide, one switch each (PlayerDeclutter.x). An unset switch is off.

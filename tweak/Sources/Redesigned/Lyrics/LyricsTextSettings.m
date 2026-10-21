@@ -88,6 +88,12 @@
 
 @end
 
+SGModRow *SGRLandscapeLyricsRow(void) {
+    return SGOptionRow(@"Landscape lyrics",
+        @"With the phone sideways, the full screen lyrics move to the right and the cover takes the left, instead of the lines stretching the whole width.",
+        SGRKeyLandscapeLyrics);
+}
+
 SGModRow *SGRLyricsTextSizesRow(void) {
     return SGPageRow(@"Text sizes", ^UIViewController *{ return [SGRLyricsTextPage new]; });
 }

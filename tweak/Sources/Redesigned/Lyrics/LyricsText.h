@@ -15,6 +15,8 @@ typedef NS_ENUM(NSInteger, SGRLyricsText) {
 #define SGRKeyLyricsTranslation @"spotifyglass.redesign.lyricsTranslation"       // off until switched on
 // The three as the words "lyrics", "pronunciation" and "translation", largest first.
 #define SGRKeyLyricsTextOrder @"spotifyglass.redesign.lyricsTextOrder"
+// Turned sideways, the lyrics share the screen with the cover (Batch 24).
+#define SGRKeyLandscapeLyrics @"spotifyglass.redesign.landscapeLyrics"
 
 // Posted on the main queue when either switch or the order changes.
 extern NSNotificationName const SGRLyricsTextDidChangeNotification;
@@ -28,3 +30,5 @@ void SGRSetLyricsTextShown(SGRLyricsText text, BOOL shown);
 // LyricsTextSettings.m: the Lyrics page's row for the order, which opens a list of the three to drag.
 @class SGModRow;
 SGModRow *SGRLyricsTextSizesRow(void);
+// The landscape lyrics switch, for the Lyrics page's Display section.
+SGModRow *SGRLandscapeLyricsRow(void);

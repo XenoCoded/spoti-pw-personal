@@ -5,9 +5,12 @@
 #import "NowPlaying.h"
 
 NSArray<SGModSection *> *SGNativePlayerScreenSections(void) {
+    SGModRow *fluid = SGOptionRow(@"Fluid backdrop", @"The cover behind the player drifts and breathes, very slowly.", SGKeyPlayerBackdropFluid);
+    fluid.visible = ^BOOL { return SGFlag(SGKeyPlayerBackdrop, NO); };
     return @[
         SGSection(@"Player screen", @[
             SGOptionRow(@"Artwork background", nil, SGKeyPlayerBackdrop),
+            fluid,
             SGOptionRow(@"Glass header buttons", nil, SGKeyPlayer),
             SGKillRow(@"Disable Canvas", @"ios-feature-canvas.canvas_enabled"),
             SGFlagRow(@"Sheet style player", @"ios-feature-nowplaying.sheet_style_npv"),

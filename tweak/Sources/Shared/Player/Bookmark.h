@@ -12,3 +12,4 @@ void SGBookmarkSetCurrent(void);
 void SGBookmarkGo(void);
 
 #define SGKeyBookmarks @"spotifyglass.bookmarks"
+#define SGKeyIntros @"spotifyglass.intros"

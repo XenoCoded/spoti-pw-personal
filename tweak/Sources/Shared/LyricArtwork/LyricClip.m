@@ -4,6 +4,7 @@
 // finish into the cache, where it does no harm and may serve a replay.
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
+#import <UIKit/UIKit.h>
 #import "Core/SGCore.h"
 #import "LyricClip.h"
 
@@ -148,6 +149,23 @@ void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duratio
             settle(key, file);
             return;
         }
+        // A render that starts in the foreground should be allowed to
+        // finish if the phone is locked mid-draw (Batch 54, background
+        // audit): the clip is the lock screen's own picture, and an
+        // encoder session abandoned to suspension is how background
+        // kills happen. The assertion buys the render its seconds; if
+        // the system calls time anyway, the flag below cancels the write
+        // through the same path as a stall and the partial is discarded.
+        __block UIBackgroundTaskIdentifier bgTask = UIBackgroundTaskInvalid;
+        __block BOOL bgExpired = NO;
+        bgTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"spoti.pw lyric clip"
+            expirationHandler:^{ bgExpired = YES; }];
+        void (^endBgTask)(void) = ^{
+            if (bgTask != UIBackgroundTaskInvalid) {
+                [UIApplication.sharedApplication endBackgroundTask:bgTask];
+                bgTask = UIBackgroundTaskInvalid;
+            }
+        };
         NSURL *out = [NSURL fileURLWithPath:clipPath(key)];
         // Render beside the destination and move in at the end, so a killed
         // render never leaves a half clip standing as a finished one.
@@ -182,6 +200,11 @@ void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duratio
         CGColorSpaceRef rgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
         NSInteger frames = MAX(2, (NSInteger)round(duration * fps));
         for (NSInteger frame = 0; frame < frames && ok; frame++) {
+            if (bgExpired) {
+                SGLog(@"lyric clip: background time called, aborting %@", key);
+                ok = NO;
+                break;
+            }
             // A writer that stops accepting frames (a full disk, a sick
             // session) must not hold the serial queue hostage: five seconds
             // of stall aborts the render and the line keeps its still.
@@ -222,6 +245,7 @@ void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duratio
         CGColorSpaceRelease(rgb);
         if (!ok) {
             [writer cancelWriting];
+            endBgTask();
             settle(key, nil);
             return;
         }
@@ -236,6 +260,7 @@ void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duratio
             if (!done) [NSFileManager.defaultManager removeItemAtURL:partial error:nil];
             SGLog(@"lyric clip: %@ %@", key, done ? @"rendered" : @"failed");
             if (done) dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ prune(); });
+            endBgTask();
             settle(key, done);
             // The caller that started this render is a waiter like any other.
         }];

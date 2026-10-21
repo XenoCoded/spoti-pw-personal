@@ -30,8 +30,23 @@ NSArray<NSString *> *SGLyricArtworkStyleNames(void) {
     return self;
 }
 
+// Two sections (Batch 29): the six the fork draws itself, and the twenty
+// from the Workshop catalogue — twenty-six rows read as a list, but scan
+// as two shelves.
+static NSInteger styleForRow(NSInteger section, NSInteger row) {
+    return section == 0 ? row : row + 6;
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)table {
+    return 2;
+}
+
 - (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section {
-    return (NSInteger)SGLyricArtworkStyleNames().count;
+    return section == 0 ? 6 : (NSInteger)SGLyricArtworkStyleNames().count - 6;
+}
+
+- (NSString *)tableView:(UITableView *)table titleForHeaderInSection:(NSInteger)section {
+    return section == 0 ? @"Ours" : @"Workshop";
 }
 
 - (CGFloat)tableView:(UITableView *)table heightForRowAtIndexPath:(NSIndexPath *)path {
@@ -44,7 +59,7 @@ NSArray<NSString *> *SGLyricArtworkStyleNames(void) {
 
 - (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *cell = SGDequeueCell(table, @"style");
-    NSInteger style = path.row;
+    NSInteger style = styleForRow(path.section, path.row);
     SGFillCell(cell, SGLyricArtworkStyleNames()[style], nil, nil, nil);
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;
     cell.accessoryView = nil;
@@ -72,12 +87,13 @@ NSArray<NSString *> *SGLyricArtworkStyleNames(void) {
     if (!thumb.image) {
         // Drawn off the main thread, dropped in when it lands if the cell is
         // still showing this style.
+        NSIndexPath *here = [path copy];
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
             UIImage *image = SGLyricArtworkSample(style, CGSizeMake(198, 264));
             if (!image) return;
             dispatch_async(dispatch_get_main_queue(), ^{
                 _thumbs[@(style)] = image;
-                UITableViewCell *now = [table cellForRowAtIndexPath:path];
+                UITableViewCell *now = [table cellForRowAtIndexPath:here];
                 UIImageView *view = (UIImageView *)[now.contentView viewWithTag:77];
                 if (view) view.image = image;
             });
@@ -88,7 +104,7 @@ NSArray<NSString *> *SGLyricArtworkStyleNames(void) {
 
 - (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)path {
     [table deselectRowAtIndexPath:path animated:NO];
-    SGSetInt(SGKeyLyricArtworkStyle, path.row);
+    SGSetInt(SGKeyLyricArtworkStyle, styleForRow(path.section, path.row));
     [table reloadData];
     [self.navigationController popViewControllerAnimated:YES];
 }

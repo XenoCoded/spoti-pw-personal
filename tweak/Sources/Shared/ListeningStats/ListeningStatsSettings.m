@@ -100,8 +100,10 @@ UIViewController *SGListeningStatsPage(void) {
             NSMutableArray<SGModRow *> *rows = [NSMutableArray array];
             for (NSDictionary *entry in [recent subarrayWithRange:NSMakeRange(0, MIN(recent.count, 8))]) {
                 NSString *title = [entry[@"title"] length] ? entry[@"title"] : @"Unknown track";
+                NSString *detail = [NSString stringWithFormat:@"%@ · %@ plays",
+                                    SGStatsFormatTime([entry[@"seconds"] doubleValue]), entry[@"plays"]];
                 NSString *uri = entry[@"uri"];
-                [rows addObject:SGStatActionRow(title, entry[@"artist"], ^NSString *{ return @""; }, ^{
+                [rows addObject:SGStatActionRow(title, entry[@"artist"], ^NSString *{ return detail; }, ^{
                     if (uri.length) SGOpenSpotifyURI([NSURL URLWithString:uri]);
                 })];
             }

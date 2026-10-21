@@ -11,6 +11,8 @@
 #import "Shared/Player/ABRepeat.h"
 #import "Shared/Player/Bookmark.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/Player/PlayerState.h"
+#import "Shared/Navigation/Links.h"
 #import "Shared/LyricArtwork/LyricArtwork.h"
 #import "Shared/Player/SpeedPitch.h"
 
@@ -99,6 +101,12 @@ static void perform(SGGestureAction action) {
         case SGGestureExtendSleep:
             SGSleepTimerExtend();
             break;
+        case SGGestureOpenArtist: {
+            SPTPlayerState *state = SGPlayerState();
+            NSString *artist = state ? SGURIString(state.track.artistURI) : nil;
+            if (artist.length) SGOpenSpotifyURI([NSURL URLWithString:artist]);
+            break;
+        }
         case SGGestureCopyLyrics: {
             NSArray *lines = SGKaraokeLinesForTrack(SGKaraokePlayingTrack());
             if (lines.count) {

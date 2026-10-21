@@ -35,6 +35,7 @@ typedef NS_ENUM(NSInteger, SGGestureAction) {
     SGGestureCopyLink,
     SGGestureExtendSleep,
     SGGestureCopyLyrics,
+    SGGestureOpenArtist,
 };
 
 NSArray<NSString *> *SGGestureActionNames(void);

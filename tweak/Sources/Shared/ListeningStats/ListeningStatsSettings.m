@@ -142,7 +142,7 @@ UIViewController *SGListeningStatsPage(void) {
             }
             [sections addObject:SGSection(@"Recently played", rows)];
         }
-        NSArray<NSDictionary *> *songs = topTracks(snapshot, 5);
+        NSArray<NSDictionary *> *songs = topTracks(snapshot, 10);
         if (songs.count) {
             NSMutableArray<SGModRow *> *rows = [NSMutableArray array];
             for (NSDictionary *entry in songs) {
@@ -156,7 +156,7 @@ UIViewController *SGListeningStatsPage(void) {
             }
             [sections addObject:SGSection(@"Top songs", rows)];
         }
-        NSArray<NSDictionary *> *artists = topArtists(snapshot, 5);
+        NSArray<NSDictionary *> *artists = topArtists(snapshot, 10);
         if (artists.count) {
             NSMutableArray<SGModRow *> *rows = [NSMutableArray array];
             for (NSDictionary *artist in artists) {

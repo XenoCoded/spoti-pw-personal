@@ -50,10 +50,37 @@ void SGStatsCountPlay(NSString *uri, NSString *title, NSString *artist) {
     save();
 }
 
+// The day a stretch of listening belongs to, in the phone's own calendar.
+static NSString *todayKey(void) {
+    static NSDateFormatter *format;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        format = [NSDateFormatter new];
+        format.dateFormat = @"yyyy-MM-dd";
+    });
+    return [format stringFromDate:NSDate.date];
+}
+
 void SGStatsAddListening(NSString *uri, NSTimeInterval seconds) {
     if (!uri.length || seconds < 1) return;
     NSMutableDictionary *all = stats();
     all[@"totalSeconds"] = @([all[@"totalSeconds"] doubleValue] + seconds);
+    // Per-day totals (Batch 31): how much of the listening was today, this
+    // week. Buckets older than five weeks are dropped as they age out.
+    NSMutableDictionary *days = all[@"days"];
+    if (![days isKindOfClass:NSMutableDictionary.class]) {
+        days = [NSMutableDictionary dictionary];
+        all[@"days"] = days;
+    }
+    NSString *today = todayKey();
+    BOOL newDay = !days[today];
+    days[today] = @([days[today] doubleValue] + seconds);
+    if (newDay && days.count > 35) {
+        NSArray<NSString *> *sorted = [days.allKeys sortedArrayUsingSelector:@selector(compare:)];
+        for (NSString *old in [sorted subarrayWithRange:NSMakeRange(0, sorted.count - 35)]) {
+            [days removeObjectForKey:old];
+        }
+    }
     NSMutableDictionary *entry = entryFor(uri, nil, nil);
     entry[@"seconds"] = @([entry[@"seconds"] doubleValue] + seconds);
     save();

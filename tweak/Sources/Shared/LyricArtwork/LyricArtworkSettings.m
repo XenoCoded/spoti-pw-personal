@@ -127,9 +127,14 @@ NSArray<SGModRow *> *SGLyricArtworkRows(void) {
         @"Saver renders smaller and slower for the battery; Max matches the stills' full size. Changing it re-renders clips at the new quality.",
         SGKeyLyricArtworkClipQuality, @[@"Saver", @"Balanced", @"Max"], 1);
     quality.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO) && SGFlag(SGKeyLyricArtworkAnimated, NO); };
+    SGModRow *shuffle = SGSwitchRow(@"Shuffle styles",
+        @"A fresh style rolled for every track; the pick above is what plays when this is off.",
+        SGKeyLyricArtworkShuffle);
+    shuffle.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO); };
     return @[
         SGOptionRow(@"Lyric artwork", @"The line being sung as the lock screen's artwork, full screen when the cover is tapped open. Turns the animated lock screen off while it is on.", SGKeyLyricArtwork),
         style,
+        shuffle,
         animated,
         quality,
     ];

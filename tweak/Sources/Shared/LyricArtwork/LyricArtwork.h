@@ -11,6 +11,8 @@
 #define SGKeyLyricArtworkClipQuality @"spotifyglass.lyricArtwork.clipQuality"
 // Which drawing, SGLyricArtworkStyle's values.
 #define SGKeyLyricArtworkStyle @"spotifyglass.lyricArtwork.style"
+// A fresh style rolled for every track (Batch 31); the picked style above is the fallback.
+#define SGKeyLyricArtworkShuffle @"spotifyglass.lyricArtwork.shuffle"
 
 typedef NS_ENUM(NSInteger, SGLyricArtworkStyle) {
     SGLyricArtworkPoster = 0,   // the cover behind, darkened, the lines over it

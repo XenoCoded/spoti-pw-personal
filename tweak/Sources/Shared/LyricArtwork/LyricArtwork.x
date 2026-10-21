@@ -1913,6 +1913,19 @@ static void tick(void) {
     SPTPlayerTrack *track = player.state.track;
     NSString *title = track.trackTitle ?: @"", *artist = track.artistName ?: @"";
     NSInteger style = SGInt(SGKeyLyricArtworkStyle, SGLyricArtworkAura);
+    // Shuffle styles (Batch 31): one roll per track, kept for the track's
+    // whole run, so a session tours the shelf instead of living in one
+    // look. The roll is over every style the picker offers.
+    if (SGFlag(SGKeyLyricArtworkShuffle, NO)) {
+        static NSString *rolledFor;
+        static NSInteger rolled;
+        if (![trackID isEqualToString:rolledFor]) {
+            rolledFor = [trackID copy];
+            rolled = arc4random_uniform((uint32_t)SGLyricArtworkStyleNames().count);
+            SGLog(@"lyric artwork: shuffled to %@ for %@", SGLyricArtworkStyleNames()[rolled], trackID);
+        }
+        style = rolled;
+    }
     // The Workshop styles' facts: where this line sits in the song, its
     // neighbours' starts, and how long the track runs.
     NSInteger lineIndex = MAX(index, 0), lineCount = lines.count;

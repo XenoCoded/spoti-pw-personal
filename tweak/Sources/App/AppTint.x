@@ -39,6 +39,7 @@ static void tintTree(UIView *view, UIColor *color) {
     for (UIView *child in view.subviews) tintTree(child, color);
 }
 
+static void refreshTint(void);
 // Refreshes are debounced (Batch 21 audit): the palette can announce itself
 // several times as a cover lands, and walking every window for each one is
 // waste. One walk, a beat after the last announcement.

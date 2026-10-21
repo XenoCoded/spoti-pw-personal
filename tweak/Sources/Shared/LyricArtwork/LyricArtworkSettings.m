@@ -7,6 +7,7 @@
 #import "Settings/SGPage.h"
 #import "Settings/SGPageStyle.h"
 #import "LyricArtwork.h"
+#import "Shared/Lyrics/Lyrics.h"
 
 NSArray<NSString *> *SGLyricArtworkStyleNames(void) {
     return @[@"Poster", @"Plain & bold", @"Aura", @"Record", @"Chat", @"Gradient",
@@ -131,11 +132,39 @@ NSArray<SGModRow *> *SGLyricArtworkRows(void) {
         @"A fresh style rolled for every track; the pick above is what plays when this is off.",
         SGKeyLyricArtworkShuffle);
     shuffle.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO); };
+    // The card and the words, out of the app (Batch 35): the lock screen's
+    // picture is the shareable thing players like Apple Music make of a
+    // lyric, and the full text is the other half of that.
+    SGModRow *card = SGStatActionRow(@"Copy lyric card",
+        @"The line on your lock screen right now, as a picture, ready to paste anywhere.",
+        ^NSString *{
+            NSInteger picked = SGInt(SGKeyLyricArtworkStyle, SGLyricArtworkAura);
+            NSArray<NSString *> *names = SGLyricArtworkStyleNames();
+            return picked >= 0 && picked < (NSInteger)names.count ? names[picked] : @"Aura";
+        }, ^{
+            UIImage *image = SGLyricArtworkCurrentCard();
+            if (image) UIPasteboard.generalPasteboard.image = image;
+        });
+    card.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO); };
+    SGModRow *words = SGStatActionRow(@"Copy lyrics",
+        @"The playing track's lyrics as plain text.",
+        ^NSString *{
+            NSArray *lines = SGKaraokeLinesForTrack(SGKaraokePlayingTrack());
+            return lines ? [NSString stringWithFormat:@"%lu lines", (unsigned long)lines.count] : @"Not loaded";
+        }, ^{
+            NSArray *lines = SGKaraokeLinesForTrack(SGKaraokePlayingTrack());
+            if (!lines.count) return;
+            NSMutableArray<NSString *> *texts = [NSMutableArray array];
+            for (id line in lines) [texts addObject:SGKaraokeLineText(line)];
+            UIPasteboard.generalPasteboard.string = [texts componentsJoinedByString:@"\n"];
+        });
     return @[
         SGOptionRow(@"Lyric artwork", @"The line being sung as the lock screen's artwork, full screen when the cover is tapped open. Turns the animated lock screen off while it is on.", SGKeyLyricArtwork),
         style,
         shuffle,
         animated,
         quality,
+        card,
+        words,
     ];
 }

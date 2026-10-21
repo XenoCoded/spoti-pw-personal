@@ -50,6 +50,9 @@ typedef NS_ENUM(NSInteger, SGLyricArtworkStyle) {
 NSArray<SGModRow *> *SGLyricArtworkRows(void);
 // The styles' picker names, in enum order (Batch 20).
 NSArray<NSString *> *SGLyricArtworkStyleNames(void);
+// The card the lock screen is showing for the line being sung, drawn at
+// full size (Batch 35); nil before any line has been drawn.
+UIImage *SGLyricArtworkCurrentCard(void);
 // One style drawn with sample facts — the picker's thumbnails (Batch 20).
 @class UIImage;
 UIImage *SGLyricArtworkSample(NSInteger style, CGSize size);

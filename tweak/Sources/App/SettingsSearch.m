@@ -211,6 +211,18 @@ static UIViewController *(^builderForPage(NSString *pageTitle))(void) {
     UITableViewCell *cell = SGDequeueCell(table, @"result");
     SGSearchEntry *entry = _shown[(NSUInteger)path.row];
     SGFillCell(cell, entry.row, [@"in " stringByAppendingString:entry.page], nil, nil);
+    // The match lights up (Batch 35), the way every system search does it.
+    NSString *query = _bar.text;
+    if (query.length) {
+        NSRange hit = [entry.row.lowercaseString rangeOfString:query.lowercaseString];
+        if (hit.location != NSNotFound) {
+            NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:entry.row
+                attributes:@{NSFontAttributeName: cell.textLabel.font}];
+            [text addAttribute:NSFontAttributeName
+                         value:[UIFont boldSystemFontOfSize:cell.textLabel.font.pointSize] range:hit];
+            cell.textLabel.attributedText = text;
+        }
+    }
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;
     cell.accessoryView = SGSymbolView(@"chevron.right", 13, UIImageSymbolWeightSemibold, 16);
     return cell;

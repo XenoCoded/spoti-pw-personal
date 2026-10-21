@@ -1842,6 +1842,12 @@ static void resend(void) {
     if (info.count) MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = info;
 }
 
+UIImage *SGLyricArtworkCurrentCard(void) {
+    MPMediaItemArtwork *artwork;
+    @synchronized (sg_lock) { artwork = sg_artwork; }
+    return artwork ? [artwork imageWithSize:CGSizeMake(900, 1200)] : nil;
+}
+
 static void clearArtwork(void) {
     if (!sg_artwork && !sg_clipArtwork) return;
     sg_artwork = nil;

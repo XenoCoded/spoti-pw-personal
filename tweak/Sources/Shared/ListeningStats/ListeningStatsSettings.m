@@ -98,9 +98,32 @@ UIViewController *SGListeningStatsPage(void) {
             }
             [sections addObject:SGSection(@"Top artists", rows)];
         }
+        // The same report as text (Batch 28): the tops this phone knows,
+        // ready to paste anywhere. The snapshot is captured with the rows
+        // and never changes under them.
+        SGModRow *export = SGStatActionRow(@"Export stats as text", nil, ^NSString *{ return @"Copy"; }, ^{
+            NSMutableArray<NSString *> *lines = [NSMutableArray arrayWithObject:@"Listening stats"];
+            [lines addObject:[NSString stringWithFormat:@"Time listened: %@", SGStatsFormatTime(total)]];
+            [lines addObject:[NSString stringWithFormat:@"Songs played: %ld", (long)plays]];
+            [lines addObject:@""];
+            [lines addObject:@"Top songs"];
+            for (NSDictionary *entry in songs) {
+                NSString *title = [entry[@"title"] length] ? entry[@"title"] : @"Unknown track";
+                NSString *artist = [entry[@"artist"] length] ? [@" — " stringByAppendingString:entry[@"artist"]] : @"";
+                [lines addObject:[NSString stringWithFormat:@"· %@%@ (%@, %@ plays)",
+                    title, artist, SGStatsFormatTime([entry[@"seconds"] doubleValue]), entry[@"plays"]]];
+            }
+            [lines addObject:@""];
+            [lines addObject:@"Top artists"];
+            for (NSDictionary *artist in artists) {
+                [lines addObject:[NSString stringWithFormat:@"· %@ (%@)",
+                    artist[@"name"], SGStatsFormatTime([artist[@"seconds"] doubleValue])]];
+            }
+            UIPasteboard.generalPasteboard.string = [lines componentsJoinedByString:@"\n"];
+        });
         SGModRow *clear = SGActionRow(@"Clear listening stats", nil, ^{ confirmClear(); });
         clear.color = SGRed();
-        [sections addObject:SGSection(nil, @[clear])];
+        [sections addObject:SGSection(nil, @[export, clear])];
     }
     return [[SGModPage alloc] initWithTitle:@"Listening stats" intro:SGRestartNote sections:sections footer:nil];
 }

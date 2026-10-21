@@ -1785,7 +1785,7 @@ static void offerClip(NSString *lineKey, NSInteger style, SGKaraokeLine *line,
     NSInteger specFps;
     clipSpec(&specSize, &specFps);
     UIImage *coverImage = cover ? [cover imageWithSize:specSize] : nil;
-    SGLyricClipRender(clipKey, specSize, specFps, clipSeconds(style, line),
+    SGLyricClipRender(clipKey, specSize, specFps, clipSeconds(style, line), YES,
         ^UIImage *(double t) {
             return drawClipFrame(style, specSize, prev, current, next, coverImage, line,
                                  title, artist, index, count, prevStart, nextStart, duration, t);
@@ -1825,7 +1825,7 @@ static void warmClips(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSInte
         NSInteger jPrevStart = j > 0 ? lines[j - 1].start : 0;
         NSInteger jNextStart = j + 1 < (NSInteger)lines.count ? lines[j + 1].start : 0;
         NSInteger count = lines.count;
-        SGLyricClipRender(clipKey, specSize, specFps, clipSeconds(style, jLine),
+        SGLyricClipRender(clipKey, specSize, specFps, clipSeconds(style, jLine), NO,
             ^UIImage *(double t) {
                 return drawClipFrame(style, specSize, jPrev, jCurrent, jNext, coverImage, jLine,
                                      title, artist, j, count, jPrevStart, jNextStart, duration, t);

@@ -116,7 +116,14 @@ static void prune(void) {
     }
 }
 
-void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duration,
+static NSMutableSet<NSString *> *priorityKeys(void) {
+    static NSMutableSet<NSString *> *set;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ set = [NSMutableSet set]; });
+    return set;
+}
+
+void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duration, BOOL priority,
                        UIImage *(^frameAt)(double t), void (^completion)(NSURL *file)) {
     dispatch_async(clipQueue(), ^{
         @synchronized (rendering()) {
@@ -125,7 +132,15 @@ void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duratio
                 [waiters()[key] addObject:completion];
                 return;
             }
+            // A speculative render is not even started while the line on
+            // screen is being drawn (Batch 30): the warmer asks again on the
+            // next line change if the line still matters.
+            if (!priority && priorityKeys().count) {
+                dispatch_async(dispatch_get_main_queue(), ^{ completion(nil); });
+                return;
+            }
             [rendering() addObject:key];
+            if (priority) [priorityKeys() addObject:key];
             waiters()[key] = [NSMutableArray arrayWithObject:completion];
         }
         NSURL *file = SGLyricClipCachedFile(key);

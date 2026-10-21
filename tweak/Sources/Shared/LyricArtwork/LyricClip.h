@@ -16,5 +16,10 @@ NSURL *SGLyricClipCachedFile(NSString *key);
 // Renders a clip: frameAt is called on a background queue for each frame's time
 // in seconds; completion lands on the main queue with the file, or nil when the
 // render failed. A key already rendering is not rendered twice.
-void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duration,
+// Renders a clip, or answers from the cache. `priority` is the line on
+// screen (Batch 30); speculative work (warming) is dropped with nil while
+// a priority render is in flight, so the line nobody is waiting for never
+// queues ahead of the one everybody is. The completion always lands on the
+// main queue, whatever path is taken.
+void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duration, BOOL priority,
                        UIImage *(^frameAt)(double t), void (^completion)(NSURL *file));

@@ -6,8 +6,24 @@
 #import "SGRKaraokeView.h"
 #import "LyricsText.h"
 #import "Redesigned/Kit/SGRBridges.h"
+#import "Shared/Player/PlayerState.h"
+#import "Headers/SPTPlayer.h"
 
-static char kKaraokeKey, kCoverKey;
+static char kKaraokeKey, kCoverKey, kTitleKey, kArtistKey;
+
+static UILabel *coverLabel(char *key, UIView *host, UIFont *font, UIColor *color) {
+    UILabel *label = objc_getAssociatedObject(host, key);
+    if (!label) {
+        label = [[UILabel alloc] initWithFrame:CGRectZero];
+        label.font = font;
+        label.textColor = color;
+        label.textAlignment = NSTextAlignmentCenter;
+        label.numberOfLines = 1;
+        objc_setAssociatedObject(host, key, label, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [host addSubview:label];
+    }
+    return label;
+}
 
 %hook _TtC32Lyrics_FullscreenElementPageImpl10LyricsView
 - (void)layoutSubviews {
@@ -42,12 +58,24 @@ static char kKaraokeKey, kCoverKey;
         UIImage *art = SGRNowPlayingArtwork(NULL, NULL);
         if (art && cover.image != art) cover.image = art;
         CGFloat zone = host.bounds.size.width * 0.40;
-        CGFloat side = MIN(zone - 56, host.bounds.size.height - 120);
-        cover.frame = CGRectMake((zone - side) / 2, (host.bounds.size.height - side) / 2, side, side);
+        CGFloat side = MIN(zone - 56, host.bounds.size.height - 190);
+        cover.frame = CGRectMake((zone - side) / 2, (host.bounds.size.height - side - 64) / 2, side, side);
+        SPTPlayerTrack *playing = SGPlayerState().track;
+        UILabel *titleLabel = coverLabel(&kTitleKey, host,
+            [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold], UIColor.whiteColor);
+        UILabel *artistLabel = coverLabel(&kArtistKey, host,
+            [UIFont systemFontOfSize:13 weight:UIFontWeightRegular], [UIColor colorWithWhite:1 alpha:0.6]);
+        titleLabel.hidden = artistLabel.hidden = NO;
+        titleLabel.text = playing.trackTitle ?: @"";
+        artistLabel.text = playing.artistName ?: @"";
+        titleLabel.frame = CGRectMake(16, CGRectGetMaxY(cover.frame) + 14, zone - 32, 22);
+        artistLabel.frame = CGRectMake(16, CGRectGetMaxY(titleLabel.frame) + 2, zone - 32, 18);
         view.frame = CGRectMake(zone, 0, host.bounds.size.width - zone, host.bounds.size.height);
         [host bringSubviewToFront:view];
     } else {
         cover.hidden = YES;
+        ((UILabel *)objc_getAssociatedObject(host, &kTitleKey)).hidden = YES;
+        ((UILabel *)objc_getAssociatedObject(host, &kArtistKey)).hidden = YES;
         view.frame = host.bounds;
     }
     [view syncSiblings];

@@ -95,6 +95,10 @@ static UIViewController *modSettingsPage(void) {
     NSMutableArray<SGModRow *> *recent = [NSMutableArray array];
     for (NSDictionary<NSString *, NSString *> *entry in SGRecentSettings()) {
         NSString *page = entry[@"page"], *rowTitle = entry[@"row"];
+        // Depth one only (Batch 26): a nested page's builder comes from the
+        // search index, and building the whole index on every open of this
+        // page is a bad trade for one row. The search page itself still
+        // resolves them, where the open is deliberate.
         UIViewController *(^build)(void) = nil;
         if ([page isEqualToString:@"Mod Settings"]) build = ^UIViewController *{ return modSettingsPage(); };
         else for (SGModRow *row in registry) if ([row.title isEqualToString:page]) { build = row.page; break; }

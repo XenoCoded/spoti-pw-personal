@@ -68,6 +68,16 @@ static NSString *queueText(void) {
             if (lines.count >= 21) break;
         }
     }
+    // The other direction (Batch 26): what led here, most recent first.
+    id reverse = [state respondsToSelector:@selector(reverse)] ? state.reverse : nil;
+    if ([reverse isKindOfClass:NSArray.class] && ((NSArray *)reverse).count) {
+        [lines addObject:@""];
+        [lines addObject:@"Played before"];
+        for (id candidate in (NSArray *)reverse) {
+            if ([candidate isKindOfClass:objc_getClass("SPTPlayerTrack")]) add(candidate, @"· ");
+            if (lines.count >= 33) break;
+        }
+    }
     return lines.count ? [lines componentsJoinedByString:@"\n"] : nil;
 }
 

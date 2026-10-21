@@ -217,10 +217,10 @@ UIViewController *SGSettingsSearchPage(void) {
 
 #pragma mark - quick access
 
-@interface SGQuickAccessPage : SGPage
+@interface SGQuickAccessSettingsPage : SGPage
 @end
 
-@implementation SGQuickAccessPage
+@implementation SGQuickAccessSettingsPage
 
 - (instancetype)init {
     if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
@@ -230,7 +230,7 @@ UIViewController *SGSettingsSearchPage(void) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    UILabel *note = SGNote(@"Pages picked here sit at the top of Mod Settings, above everything else.");
+    UIView *note = SGNote(@"Pages picked here sit at the top of Mod Settings, above everything else.");
     self.tableView.tableFooterView = note;
 }
 
@@ -279,5 +279,5 @@ UIViewController *SGSettingsSearchPage(void) {
 @end
 
 UIViewController *SGQuickAccessPage(void) {
-    return [SGQuickAccessPage new];
+    return [SGQuickAccessSettingsPage new];
 }

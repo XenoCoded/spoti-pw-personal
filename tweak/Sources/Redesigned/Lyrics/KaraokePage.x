@@ -9,7 +9,7 @@
 #import "Shared/Player/PlayerState.h"
 #import "Headers/SPTPlayer.h"
 
-static char kKaraokeKey, kCoverKey, kTitleKey, kArtistKey;
+static char kKaraokeKey, kCoverKey, kCoverWrapKey, kTitleKey, kArtistKey;
 
 static UILabel *coverLabel(char *key, UIView *host, UIFont *font, UIColor *color) {
     UILabel *label = objc_getAssociatedObject(host, key);
@@ -43,23 +43,35 @@ static UILabel *coverLabel(char *key, UIView *host, UIFont *font, UIColor *color
     // frame is the whole change. Portrait, or the switch off, it has the
     // page to itself as before.
     BOOL split = SGFlag(SGRKeyLandscapeLyrics, NO) && host.bounds.size.width > host.bounds.size.height;
+    // The cover rides in a wrapper that carries its shadow (Batch 27): a
+    // rounded picture cannot cast one on its own layer.
+    UIView *wrap = objc_getAssociatedObject(host, &kCoverWrapKey);
     UIImageView *cover = objc_getAssociatedObject(host, &kCoverKey);
     if (split) {
-        if (!cover) {
-            cover = [[UIImageView alloc] initWithFrame:CGRectZero];
+        if (!wrap) {
+            wrap = [[UIView alloc] initWithFrame:CGRectZero];
+            wrap.backgroundColor = UIColor.clearColor;
+            wrap.layer.shadowColor = UIColor.blackColor.CGColor;
+            wrap.layer.shadowOpacity = 0.5;
+            wrap.layer.shadowRadius = 28;
+            wrap.layer.shadowOffset = CGSizeMake(0, 14);
+            objc_setAssociatedObject(host, &kCoverWrapKey, wrap, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            [host addSubview:wrap];
+            cover = [[UIImageView alloc] initWithFrame:wrap.bounds];
             cover.contentMode = UIViewContentModeScaleAspectFill;
-            cover.clipsToBounds = YES;
             cover.layer.cornerRadius = 18;
             cover.layer.cornerCurve = kCACornerCurveContinuous;
+            cover.layer.masksToBounds = YES;
+            cover.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
             objc_setAssociatedObject(host, &kCoverKey, cover, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            [host addSubview:cover];
+            [wrap addSubview:cover];
         }
-        cover.hidden = NO;
+        wrap.hidden = NO;
         UIImage *art = SGRNowPlayingArtwork(NULL, NULL);
         if (art && cover.image != art) cover.image = art;
         CGFloat zone = host.bounds.size.width * 0.40;
         CGFloat side = MIN(zone - 56, host.bounds.size.height - 190);
-        cover.frame = CGRectMake((zone - side) / 2, (host.bounds.size.height - side - 64) / 2, side, side);
+        wrap.frame = CGRectMake((zone - side) / 2, (host.bounds.size.height - side - 64) / 2, side, side);
         SPTPlayerTrack *playing = SGPlayerState().track;
         UILabel *titleLabel = coverLabel(&kTitleKey, host,
             [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold], UIColor.whiteColor);
@@ -68,12 +80,12 @@ static UILabel *coverLabel(char *key, UIView *host, UIFont *font, UIColor *color
         titleLabel.hidden = artistLabel.hidden = NO;
         titleLabel.text = playing.trackTitle ?: @"";
         artistLabel.text = playing.artistName ?: @"";
-        titleLabel.frame = CGRectMake(16, CGRectGetMaxY(cover.frame) + 14, zone - 32, 22);
+        titleLabel.frame = CGRectMake(16, CGRectGetMaxY(wrap.frame) + 14, zone - 32, 22);
         artistLabel.frame = CGRectMake(16, CGRectGetMaxY(titleLabel.frame) + 2, zone - 32, 18);
         view.frame = CGRectMake(zone, 0, host.bounds.size.width - zone, host.bounds.size.height);
         [host bringSubviewToFront:view];
     } else {
-        cover.hidden = YES;
+        wrap.hidden = YES;
         ((UILabel *)objc_getAssociatedObject(host, &kTitleKey)).hidden = YES;
         ((UILabel *)objc_getAssociatedObject(host, &kArtistKey)).hidden = YES;
         view.frame = host.bounds;

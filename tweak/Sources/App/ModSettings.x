@@ -217,8 +217,8 @@ void SGOpenModSettings(UIView *source) {
 }
 
 // At the end of the settings list, or above the first row of the drawer's, with the inset for them
-// added again whenever Spotify resets the inset. The drawer carries two rows (personal fork):
-// Mod Settings, then Listening stats and the Lock screen page under it.
+// added again whenever Spotify resets the inset. The drawer carries three rows (personal fork):
+// Mod Settings, Listening stats and the Lock screen page, each drawn above the last.
 static void placeRow(UICollectionView *list, NSArray<SGModSettingsRow *> *rows) {
     CGFloat bottom = list.contentSize.height;
     [rows enumerateObjectsUsingBlock:^(SGModSettingsRow *row, NSUInteger i, BOOL *stop) {

@@ -49,7 +49,18 @@
 
 @interface SGModPage : SGPage
 - (instancetype)initWithTitle:(NSString *)title intro:(NSString *)intro sections:(NSArray<SGModSection *> *)sections footer:(NSString *)footer;
+// The sections the page was built with, for the settings search's index.
+- (NSArray<SGModSection *> *)sg_sections;
 @end
+
+// Recently used settings (Batch 22): the last few rows touched, newest
+// first, each @{@"page": …, @"row": …} with the row absent for a page visit.
+// Recorded by the page itself at its switch and navigation choke points.
+void SGRecordRecent(NSString *page, NSString *row);
+NSArray<NSDictionary<NSString *, NSString *> *> *SGRecentSettings(void);
+// Ask the next page titled `page` that appears to scroll to its row titled
+// `row` and flash it — how a search result lands on the setting itself.
+void SGModPageFocus(NSString *page, NSString *row);
 
 // The intro of every page whose switches the hooks read at launch.
 extern NSString *const SGRestartNote;

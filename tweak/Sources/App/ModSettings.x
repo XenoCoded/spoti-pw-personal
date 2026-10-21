@@ -25,6 +25,7 @@
 #import "Shared/Player/PlayerSettings.h"
 #import "Shared/ListeningStats/ListeningStats.h"
 #import "App/About/About.h"
+#import "SettingsSearch.h"
 #import "App/Donate/Donate.h"
 #import "Pages.h"
 
@@ -65,17 +66,52 @@ static UIViewController *modSettingsPage(void) {
         audioEffects,
     ]];
     if (!SGRedesignedUIStored()) [parts addObject:pageRow(@"Home & Library", @"house", ^UIViewController *{ return SGHomeSettingsPage(); })];
+    NSArray<SGModRow *> *privacy = @[
+        pageRow(@"Privacy & clutter", @"hand.raised", ^UIViewController *{ return SGPrivacySettingsPage(); }),
+        pageRow(@"Labs", @"testtube.2", ^UIViewController *{ return SGLabsPage(); }),
+    ];
+    NSArray<SGModRow *> *system = @[
+        pageRow(@"All flags", @"flag", ^UIViewController *{ return SGAllFlagsPage(); }),
+        mod,
+    ];
+    // Batch 22: the root registers every page it offers, then leads with the
+    // ways back to a setting — search, the pages the user pinned, and the
+    // ones they touched last — before the full list.
+    NSMutableArray<SGModRow *> *registry = [NSMutableArray arrayWithArray:parts];
+    [registry addObjectsFromArray:privacy];
+    [registry addObjectsFromArray:system];
+    SGSettingsSearchSetRegistry(registry, ^UIViewController *{ return modSettingsPage(); });
+    [sections addObject:SGSection(nil, @[
+        pageRow(@"Search settings", @"magnifyingglass", ^UIViewController *{ return SGSettingsSearchPage(); }),
+        pageRow(@"Customise quick access", @"pin", ^UIViewController *{ return SGQuickAccessPage(); }),
+    ])];
+    NSMutableArray<SGModRow *> *quick = [NSMutableArray array];
+    for (NSString *title in SGQuickAccessTitles()) {
+        for (SGModRow *row in registry) {
+            if ([row.title isEqualToString:title]) { [quick addObject:pageRow(title, row.symbol, row.page)]; break; }
+        }
+    }
+    if (quick.count) [sections addObject:SGSection(@"Quick access", quick)];
+    NSMutableArray<SGModRow *> *recent = [NSMutableArray array];
+    for (NSDictionary<NSString *, NSString *> *entry in SGRecentSettings()) {
+        NSString *page = entry[@"page"], *rowTitle = entry[@"row"];
+        UIViewController *(^build)(void) = nil;
+        if ([page isEqualToString:@"Mod Settings"]) build = ^UIViewController *{ return modSettingsPage(); };
+        else for (SGModRow *row in registry) if ([row.title isEqualToString:page]) { build = row.page; break; }
+        if (!build) continue;
+        SGModRow *r = SGPageRow(rowTitle ?: page, ^UIViewController *{
+            if (rowTitle) SGModPageFocus(page, rowTitle);
+            return build();
+        });
+        r.subtitle = rowTitle ? [@"in " stringByAppendingString:page] : @"Page";
+        [recent addObject:SGWithSymbol(r, @"clock.arrow.circlepath")];
+    }
+    if (recent.count) [sections addObject:SGSection(@"Recent", recent)];
     [sections addObjectsFromArray:@[
         SGAppearanceSection(),
         SGSection(nil, parts),
-        SGSection(nil, @[
-            pageRow(@"Privacy & clutter", @"hand.raised", ^UIViewController *{ return SGPrivacySettingsPage(); }),
-            pageRow(@"Labs", @"testtube.2", ^UIViewController *{ return SGLabsPage(); }),
-        ]),
-        SGSection(nil, @[
-            pageRow(@"All flags", @"flag", ^UIViewController *{ return SGAllFlagsPage(); }),
-            mod,
-        ]),
+        SGSection(nil, privacy),
+        SGSection(nil, system),
     ]];
     return [[SGModPage alloc] initWithTitle:@"Mod Settings" intro:nil sections:sections footer:nil];
 }

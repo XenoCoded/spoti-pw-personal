@@ -406,6 +406,31 @@ static const CGFloat kSliderTop = 12, kSliderLine = 18, kSliderSubtitle = 14, kS
 
 @end
 
+#pragma mark - recents and focus (Batch 22)
+
+#define SGKeySettingsRecents @"spotifyglass.settings.recents"
+
+void SGRecordRecent(NSString *page, NSString *row) {
+    if (!page) return;
+    NSMutableArray<NSDictionary<NSString *, NSString *> *> *list =
+        [[NSUserDefaults.standardUserDefaults arrayForKey:SGKeySettingsRecents] mutableCopy] ?: [NSMutableArray array];
+    NSDictionary *entry = row ? @{@"page": page, @"row": row} : @{@"page": page};
+    [list removeObject:entry];
+    [list insertObject:entry atIndex:0];
+    while (list.count > 6) [list removeLastObject];
+    [NSUserDefaults.standardUserDefaults setObject:list forKey:SGKeySettingsRecents];
+}
+
+NSArray<NSDictionary<NSString *, NSString *> *> *SGRecentSettings(void) {
+    return [NSUserDefaults.standardUserDefaults arrayForKey:SGKeySettingsRecents] ?: @[];
+}
+
+static NSString *sg_focusPage, *sg_focusRow;
+void SGModPageFocus(NSString *page, NSString *row) {
+    sg_focusPage = [page copy];
+    sg_focusRow = [row copy];
+}
+
 #pragma mark - the page
 
 @implementation SGModPage {
@@ -428,6 +453,10 @@ static const CGFloat kSliderTop = 12, kSliderLine = 18, kSliderSubtitle = 14, kS
     // rows whose numbers climb on their own keep one running.
     for (SGModSection *s in sections) for (SGModRow *row in s.rows) _live |= row.value && !row.page;
     return self;
+}
+
+- (NSArray<SGModSection *> *)sg_sections {
+    return _sections;
 }
 
 - (NSArray<NSArray<SGModRow *> *> *)rowsToShow {
@@ -517,6 +546,32 @@ static const CGFloat kSliderTop = 12, kSliderLine = 18, kSliderSubtitle = 14, kS
     [super viewDidDisappear:animated];
     [_ticker invalidate];
     _ticker = nil;
+}
+
+// A search result or a recent asked for a row on this page: scroll to it
+// and flash it once the page is up, then forget the ask.
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    if (!sg_focusPage || ![sg_focusPage isEqualToString:self.title]) return;
+    NSString *wanted = sg_focusRow;
+    sg_focusPage = nil;
+    sg_focusRow = nil;
+    if (!wanted) return;
+    [_shown enumerateObjectsUsingBlock:^(NSArray<SGModRow *> *rows, NSUInteger section, BOOL *stopSection) {
+        [rows enumerateObjectsUsingBlock:^(SGModRow *row, NSUInteger i, BOOL *stopRow) {
+            if (![row.title isEqualToString:wanted]) return;
+            NSIndexPath *path = [NSIndexPath indexPathForRow:(NSInteger)i inSection:(NSInteger)section];
+            [self.tableView scrollToRowAtIndexPath:path atScrollPosition:UITableViewScrollPositionMiddle animated:YES];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self.tableView selectRowAtIndexPath:path animated:YES scrollPosition:UITableViewScrollPositionNone];
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.7 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    [self.tableView deselectRowAtIndexPath:path animated:YES];
+                });
+            });
+            *stopRow = YES;
+            *stopSection = YES;
+        }];
+    }];
 }
 
 - (void)readValues {
@@ -633,7 +688,10 @@ static const CGFloat kSliderTop = 12, kSliderLine = 18, kSliderSubtitle = 14, kS
         [self explainLock];
         return;
     }
-    if (row.page) [self.navigationController pushViewController:row.page() animated:YES];
+    if (row.page) {
+        SGRecordRecent(row.title, nil);
+        [self.navigationController pushViewController:row.page() animated:YES];
+    }
     if (!row.action) return;
     row.action();
     [table deselectRowAtIndexPath:path animated:YES];
@@ -675,6 +733,7 @@ static const CGFloat kSliderTop = 12, kSliderLine = 18, kSliderSubtitle = 14, kS
     SGModRow *row = [self rowAt:path];
     if (row.flag) SGSetFlagOverride(row.key, on ? @(!row.forceOff) : nil);
     else SGSetEnabled(row.key, on);
+    SGRecordRecent(self.title, row.title);
     if (row.changed) row.changed(on);
     // A glowing switch is let finish its slide before the reload puts a new one in its place; rows coming
     // or going are let finish first too.

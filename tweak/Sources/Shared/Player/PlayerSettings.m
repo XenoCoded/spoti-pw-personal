@@ -70,13 +70,6 @@ static NSString *queueText(void) {
             if (lines.count >= 21) break;
         }
     }
-    // The way in (Batch 51): whoever receives the queue usually wants
-    // the song that's playing right now first.
-    NSString *playingId = SGKaraokePlayingTrack();
-    if (playingId.length) {
-        [lines addObject:@""];
-        [lines addObject:[@"https://open.spotify.com/track/" stringByAppendingString:playingId]];
-    }
     // The other direction (Batch 26): what led here, most recent first.
     id reverse = [state respondsToSelector:@selector(reverse)] ? state.reverse : nil;
     if ([reverse isKindOfClass:NSArray.class] && ((NSArray *)reverse).count) {
@@ -86,6 +79,13 @@ static NSString *queueText(void) {
             if ([candidate isKindOfClass:objc_getClass("SPTPlayerTrack")]) add(candidate, @"· ");
             if (lines.count >= 33) break;
         }
+    }
+    // The way in (Batch 51): whoever receives the queue usually wants
+    // the song that's playing right now first.
+    NSString *playingId = SGKaraokePlayingTrack();
+    if (playingId.length) {
+        [lines addObject:@""];
+        [lines addObject:[@"https://open.spotify.com/track/" stringByAppendingString:playingId]];
     }
     return lines.count ? [lines componentsJoinedByString:@"\n"] : nil;
 }

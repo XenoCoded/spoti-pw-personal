@@ -45,6 +45,7 @@ UIViewController *SGLockScreenSettingsPage(void) {
 #import "Headers/SPTPlayer.h"
 
 static NSTimeInterval sg_copiedAt;
+static NSTimeInterval sg_linkCopiedAt;
 
 static NSString *queueText(void) {
     id<SPTPlayer> player = SGKaraokePlayer();
@@ -82,7 +83,20 @@ static NSString *queueText(void) {
 }
 
 NSArray<SGModRow *> *SGQueueShareRows(void) {
-    return @[SGStatActionRow(@"Copy the queue as text",
+    SGModRow *link = SGStatActionRow(@"Copy link to this track",
+        @"The open.spotify.com link, ready to send to anyone.",
+        ^NSString *{
+            return NSDate.date.timeIntervalSince1970 - sg_linkCopiedAt < 2.5 ? @"Copied ✓" : @"Copy";
+        },
+        ^{
+            NSString *track = SGKaraokePlayingTrack();
+            if (!track.length) return;
+            UIPasteboard.generalPasteboard.string =
+                [@"https://open.spotify.com/track/" stringByAppendingString:track];
+            sg_linkCopiedAt = NSDate.date.timeIntervalSince1970;
+        });
+    link.visible = ^BOOL { return SGKaraokePlayingTrack().length > 0; };
+    return @[link, SGStatActionRow(@"Copy the queue as text",
         @"The playing song and what's up next, one a line, ready to paste anywhere.",
         ^NSString *{
             return NSDate.date.timeIntervalSince1970 - sg_copiedAt < 2.5 ? @"Copied ✓" : @"Copy";

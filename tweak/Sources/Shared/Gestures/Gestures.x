@@ -9,6 +9,7 @@
 #import "Headers/SPTNowPlayingPlaybackController.h"
 #import "Shared/Player/SleepTimer.h"
 #import "Shared/Player/ABRepeat.h"
+#import "Shared/Player/Bookmark.h"
 #import "Shared/LyricArtwork/LyricArtwork.h"
 #import "Shared/Player/SpeedPitch.h"
 
@@ -80,6 +81,12 @@ static void perform(SGGestureAction action) {
             if (card) UIPasteboard.generalPasteboard.image = card;
             break;
         }
+        case SGGestureSetBookmark:
+            SGBookmarkSetCurrent();
+            break;
+        case SGGestureGoBookmark:
+            SGBookmarkGo();
+            break;
     }
 }
 

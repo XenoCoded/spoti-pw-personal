@@ -7,4 +7,8 @@
 @class SGModRow;
 NSArray<SGModRow *> *SGBookmarkRows(void);
 
+// The taps themselves, shared with the gesture grid (Batch 41).
+void SGBookmarkSetCurrent(void);
+void SGBookmarkGo(void);
+
 #define SGKeyBookmarks @"spotifyglass.bookmarks"

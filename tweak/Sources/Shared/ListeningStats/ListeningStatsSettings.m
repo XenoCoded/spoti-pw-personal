@@ -160,6 +160,15 @@ UIViewController *SGListeningStatsPage(void) {
                 [lines addObject:[NSString stringWithFormat:@"· %@ (%@)",
                     artist[@"name"], SGStatsFormatTime([artist[@"seconds"] doubleValue])]];
             }
+            if (recent.count) {
+                [lines addObject:@""];
+                [lines addObject:@"Recently played"];
+                for (NSDictionary *entry in [recent subarrayWithRange:NSMakeRange(0, MIN(recent.count, 8))]) {
+                    NSString *title = [entry[@"title"] length] ? entry[@"title"] : @"Unknown track";
+                    NSString *artist = [entry[@"artist"] length] ? [@" — " stringByAppendingString:entry[@"artist"]] : @"";
+                    [lines addObject:[NSString stringWithFormat:@"· %@%@", title, artist]];
+                }
+            }
             UIPasteboard.generalPasteboard.string = [lines componentsJoinedByString:@"\n"];
         });
         SGModRow *clear = SGActionRow(@"Clear listening stats", nil, ^{ confirmClear(); });

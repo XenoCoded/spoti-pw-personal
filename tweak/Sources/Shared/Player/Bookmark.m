@@ -26,28 +26,36 @@ static double bookmarkFor(NSString *track) {
     return mark ? mark.doubleValue : -1;
 }
 
+void SGBookmarkSetCurrent(void) {
+    NSString *track = SGKaraokePlayingTrack();
+    NSInteger ms = SGKaraokePositionMs();
+    if (!track || ms < 0) return;
+    NSMutableDictionary *marks = bookmarks();
+    marks[track] = @(ms / 1000.0);
+    saveBookmarks(marks);
+    SGLog(@"bookmark: %@ at %.1fs", track, ms / 1000.0);
+}
+
+void SGBookmarkGo(void) {
+    double mark = bookmarkFor(SGKaraokePlayingTrack());
+    if (mark < 0) return;
+    id<SPTPlayer> player = SGKaraokePlayer();
+    [player seekTo:mark];
+}
+
 NSArray<SGModRow *> *SGBookmarkRows(void) {
     SGModRow *set = SGStatActionRow(@"Bookmark this moment", @"Saved for this track, whenever you come back to it.",
         ^NSString *{
             return formatTime(bookmarkFor(SGKaraokePlayingTrack()));
         }, ^{
-            NSString *track = SGKaraokePlayingTrack();
-            NSInteger ms = SGKaraokePositionMs();
-            if (!track || ms < 0) return;
-            NSMutableDictionary *marks = bookmarks();
-            marks[track] = @(ms / 1000.0);
-            saveBookmarks(marks);
-            SGLog(@"bookmark: %@ at %.1fs", track, ms / 1000.0);
+            SGBookmarkSetCurrent();
         });
     SGModRow *go = SGStatActionRow(@"Go to the bookmark", nil,
         ^NSString *{
             double mark = bookmarkFor(SGKaraokePlayingTrack());
             return mark >= 0 ? formatTime(mark) : @"—";
         }, ^{
-            double mark = bookmarkFor(SGKaraokePlayingTrack());
-            if (mark < 0) return;
-            id<SPTPlayer> player = SGKaraokePlayer();
-            [player seekTo:mark];
+            SGBookmarkGo();
         });
     go.visible = ^BOOL { return bookmarkFor(SGKaraokePlayingTrack()) >= 0; };
     SGModRow *clear = SGActionRow(@"Clear the bookmark", nil, ^{

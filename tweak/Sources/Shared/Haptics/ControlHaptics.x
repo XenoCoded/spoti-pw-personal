@@ -236,6 +236,8 @@ static void gesturePerformed(SGGestureAction action) {
         case SGGestureSetB: SGPlayFeedback(SGFeedbackDetent); break;
         case SGGestureClearAB: SGPlayFeedback(SGFeedbackToggle); break;
         case SGGestureCopyCard: SGPlayFeedback(SGFeedbackAdd); break;
+        case SGGestureSetBookmark: SGPlayFeedback(SGFeedbackAdd); break;
+        case SGGestureGoBookmark: SGPlayFeedback(SGFeedbackSkip); break;
     }
 }
 

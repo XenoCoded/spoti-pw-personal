@@ -239,6 +239,8 @@ static void gesturePerformed(SGGestureAction action) {
         case SGGestureSetBookmark: SGPlayFeedback(SGFeedbackAdd); break;
         case SGGestureGoBookmark: SGPlayFeedback(SGFeedbackSkip); break;
         case SGGestureCopyLink: SGPlayFeedback(SGFeedbackAdd); break;
+        case SGGestureExtendSleep: SGPlayFeedback(SGFeedbackAdd); break;
+        case SGGestureCopyLyrics: SGPlayFeedback(SGFeedbackAdd); break;
     }
 }
 

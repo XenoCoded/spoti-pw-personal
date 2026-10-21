@@ -15,6 +15,10 @@
 
 @class SGModRow;
 NSArray<SGModRow *> *SGSleepTimerRows(void);
+
+// Push an armed span's deadline out a quarter hour (Batch 34's row, Batch
+// 43's gesture). A no-op unless a span is actually armed and still ahead.
+void SGSleepTimerExtend(void);
 // Choose from anywhere (the gesture grid): sets the choice and clears the
 // last arming, so the countdown starts from this moment.
 void SGSleepTimerChoose(NSInteger choice);

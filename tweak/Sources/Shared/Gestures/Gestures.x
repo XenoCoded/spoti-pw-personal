@@ -96,6 +96,18 @@ static void perform(SGGestureAction action) {
             }
             break;
         }
+        case SGGestureExtendSleep:
+            SGSleepTimerExtend();
+            break;
+        case SGGestureCopyLyrics: {
+            NSArray *lines = SGKaraokeLinesForTrack(SGKaraokePlayingTrack());
+            if (lines.count) {
+                NSMutableArray<NSString *> *texts = [NSMutableArray array];
+                for (id line in lines) [texts addObject:SGKaraokeLineText(line)];
+                UIPasteboard.generalPasteboard.string = [texts componentsJoinedByString:@"\n"];
+            }
+            break;
+        }
     }
 }
 

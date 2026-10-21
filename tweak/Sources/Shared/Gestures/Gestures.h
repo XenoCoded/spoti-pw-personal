@@ -33,6 +33,8 @@ typedef NS_ENUM(NSInteger, SGGestureAction) {
     SGGestureSetBookmark,
     SGGestureGoBookmark,
     SGGestureCopyLink,
+    SGGestureExtendSleep,
+    SGGestureCopyLyrics,
 };
 
 NSArray<NSString *> *SGGestureActionNames(void);

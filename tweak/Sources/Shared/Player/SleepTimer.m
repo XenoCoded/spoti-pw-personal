@@ -3,6 +3,20 @@
 #import "Settings/SGModPage.h"
 #import "Core/SGPrefs.h"
 
+static BOOL spanArmed(void) {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    NSInteger choice = SGInt(SGKeySleepTimer, 0);
+    return choice >= 1 && choice <= 4
+        && [defaults integerForKey:SGKeySleepTimerArmed] == choice
+        && [defaults doubleForKey:SGKeySleepTimerEnd] > NSDate.date.timeIntervalSince1970;
+}
+
+void SGSleepTimerExtend(void) {
+    if (!spanArmed()) return;
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults setDouble:[defaults doubleForKey:SGKeySleepTimerEnd] + 900 forKey:SGKeySleepTimerEnd];
+}
+
 NSArray<SGModRow *> *SGSleepTimerRows(void) {
     SGModRow *timer = SGChoiceRow(@"Sleep timer",
                          @"Pauses Spotify when the time is up. Set it here; the Live Activity's card has its own, for the lock screen.",
@@ -29,15 +43,8 @@ NSArray<SGModRow *> *SGSleepTimerRows(void) {
     // sleep is not. The countdown reads the end key on every check, so
     // pushing it out is the whole feature — no re-arming, no lost span.
     SGModRow *extend = SGActionRow(@"Add 15 minutes", nil, ^{
-        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-        [defaults setDouble:[defaults doubleForKey:SGKeySleepTimerEnd] + 900 forKey:SGKeySleepTimerEnd];
+        SGSleepTimerExtend();
     });
-    extend.visible = ^BOOL {
-        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-        NSInteger choice = SGInt(SGKeySleepTimer, 0);
-        return choice >= 1 && choice <= 4
-            && [defaults integerForKey:SGKeySleepTimerArmed] == choice
-            && [defaults doubleForKey:SGKeySleepTimerEnd] > NSDate.date.timeIntervalSince1970;
-    };
+    extend.visible = ^BOOL { return spanArmed(); };
     return @[timer, extend];
 }

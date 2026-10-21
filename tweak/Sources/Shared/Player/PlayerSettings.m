@@ -89,10 +89,18 @@ NSArray<SGModRow *> *SGQueueShareRows(void) {
     SGModRow *history = SGStatRow(@"Your history with this track", ^NSString *{
         SPTPlayerState *state = SGPlayerState();
         NSString *uri = state ? SGURIString(state.track.URI) : nil;
-        NSDictionary *entry = uri ? SGStatsSnapshot()[@"tracks"][uri] : nil;
+        NSDictionary *tracks = SGStatsSnapshot()[@"tracks"];
+        NSDictionary *entry = uri ? tracks[uri] : nil;
         if (![entry isKindOfClass:NSDictionary.class] || [entry[@"plays"] integerValue] == 0) return @"First listen";
-        return [NSString stringWithFormat:@"%@ plays · %@",
-            entry[@"plays"], SGStatsFormatTime([entry[@"seconds"] doubleValue])];
+        // Its rank among everything ever counted (Batch 49): plays say
+        // how often, the rank says how much it matters here.
+        double seconds = [entry[@"seconds"] doubleValue];
+        NSInteger rank = 1;
+        for (NSDictionary *other in tracks.allValues) {
+            if ([other[@"seconds"] doubleValue] > seconds) rank++;
+        }
+        return [NSString stringWithFormat:@"%@ plays · %@ · # %ld",
+            entry[@"plays"], SGStatsFormatTime(seconds), (long)rank];
     });
     history.visible = ^BOOL {
         return SGFlag(SGKeyListeningStats, NO) && SGPlayerState() != nil;

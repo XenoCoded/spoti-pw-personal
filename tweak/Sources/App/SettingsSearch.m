@@ -42,6 +42,9 @@ NSArray<NSString *> *SGQuickAccessTitles(void) {
 
 @interface SGSearchEntry : NSObject
 @property (nonatomic, copy) NSString *row, *note, *page;
+// For a section entry: `row` is the section's name (what shows and what
+// matches), and `target` is the row the page should flash on arrival.
+@property (nonatomic, copy) NSString *target;
 @property (nonatomic, copy) UIViewController *(^build)(void);
 @end
 
@@ -56,6 +59,22 @@ static void indexPage(NSMutableArray<SGSearchEntry *> *entries, NSMutableSet<NSS
     UIViewController *page = build();
     if (![page isKindOfClass:SGModPage.class]) return;
     for (SGModSection *section in [(SGModPage *)page sg_sections]) {
+        // The section itself is searchable (Batch 32): "Storage" and
+        // "Gestures" are how people think of these places, and no row on
+        // the page carries those words. The entry lands on the section's
+        // first row.
+        if (section.title.length && section.rows.count) {
+            NSString *stamp = [pageTitle stringByAppendingFormat:@"\n§%@", section.title];
+            if (![seen containsObject:stamp]) {
+                [seen addObject:stamp];
+                SGSearchEntry *entry = [SGSearchEntry new];
+                entry.row = section.title;
+                entry.target = section.rows.firstObject.title;
+                entry.page = pageTitle;
+                entry.build = build;
+                [entries addObject:entry];
+            }
+        }
         for (SGModRow *row in section.rows) {
             NSString *stamp = [pageTitle stringByAppendingFormat:@"\n%@", row.title];
             if (![seen containsObject:stamp]) {
@@ -205,7 +224,8 @@ static UIViewController *(^builderForPage(NSString *pageTitle))(void) {
     // A recent for a page itself carries the page's name as its row; asking
     // the page to flash its own title would find nothing, so only a real
     // row title is focused.
-    if (![entry.row isEqualToString:entry.page]) SGModPageFocus(entry.page, entry.row);
+    NSString *focus = entry.target ?: entry.row;
+    if (![focus isEqualToString:entry.page]) SGModPageFocus(entry.page, focus);
     [self.navigationController pushViewController:page animated:YES];
 }
 

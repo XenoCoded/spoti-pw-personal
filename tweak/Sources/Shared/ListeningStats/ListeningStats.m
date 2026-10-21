@@ -58,6 +58,10 @@ void SGStatsCountPlay(NSString *uri, NSString *title, NSString *artist) {
     if (!uri.length) return;
     NSMutableDictionary *entry = entryFor(uri, title, artist);
     entry[@"plays"] = @([entry[@"plays"] doubleValue] + 1);
+    // When it was last played (Batch 39), for the stats page's Recently
+    // played: the tops are all-time, but what someone opens the page for
+    // is usually "what was that song from earlier".
+    entry[@"lastPlayed"] = @(NSDate.date.timeIntervalSince1970);
     // Plays per day (Batch 38), beside the seconds per day: "Today" on the
     // stats page gets its count as well as its time.
     NSMutableDictionary *all = stats();

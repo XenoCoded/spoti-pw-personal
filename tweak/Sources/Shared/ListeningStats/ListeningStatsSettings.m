@@ -86,6 +86,27 @@ UIViewController *SGListeningStatsPage(void) {
             SGStatRow(@"Songs played", ^NSString *{ return @(plays).stringValue; }),
             SGStatRow(@"Different songs", ^NSString *{ return @(tracks.count).stringValue; }),
         ])];
+        // Recently played (Batch 39): the same doors as the top songs,
+        // in the order they were actually heard. Entries from before the
+        // stamp existed simply do not appear.
+        NSMutableArray<NSDictionary *> *recent = [NSMutableArray array];
+        for (NSDictionary *entry in tracks.allValues) {
+            if ([entry[@"lastPlayed"] doubleValue] > 0) [recent addObject:entry];
+        }
+        [recent sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+            return [b[@"lastPlayed"] compare:a[@"lastPlayed"]];
+        }];
+        if (recent.count) {
+            NSMutableArray<SGModRow *> *rows = [NSMutableArray array];
+            for (NSDictionary *entry in [recent subarrayWithRange:NSMakeRange(0, MIN(recent.count, 8))]) {
+                NSString *title = [entry[@"title"] length] ? entry[@"title"] : @"Unknown track";
+                NSString *uri = entry[@"uri"];
+                [rows addObject:SGStatActionRow(title, entry[@"artist"], ^NSString *{ return @""; }, ^{
+                    if (uri.length) SGOpenSpotifyURI([NSURL URLWithString:uri]);
+                })];
+            }
+            [sections addObject:SGSection(@"Recently played", rows)];
+        }
         NSArray<NSDictionary *> *songs = topTracks(snapshot, 5);
         if (songs.count) {
             NSMutableArray<SGModRow *> *rows = [NSMutableArray array];

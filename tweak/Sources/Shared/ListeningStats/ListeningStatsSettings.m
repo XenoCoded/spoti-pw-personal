@@ -80,6 +80,19 @@ UIViewController *SGListeningStatsPage(void) {
             NSDate *day = [NSCalendar.currentCalendar dateByAddingUnit:NSCalendarUnitDay value:-back toDate:NSDate.date options:0];
             weekSeconds += [days[[dayFormat stringFromDate:day]] doubleValue];
         }
+        // Week over week (Batch 50): the seven days before the seven
+        // above, as a signed percentage — the one number that says
+        // whether the habit is growing.
+        double lastWeekSeconds = 0;
+        for (NSInteger back = 7; back < 14; back++) {
+            NSDate *day = [NSCalendar.currentCalendar dateByAddingUnit:NSCalendarUnitDay value:-back toDate:NSDate.date options:0];
+            lastWeekSeconds += [days[[dayFormat stringFromDate:day]] doubleValue];
+        }
+        NSString *wowText = @"—";
+        if (lastWeekSeconds > 0) {
+            double change = (weekSeconds - lastWeekSeconds) / lastWeekSeconds * 100;
+            wowText = [NSString stringWithFormat:@"%@%.0f%%", change > 0 ? @"+" : @"", change];
+        }
         // The streak and the biggest day (Batch 45): both are just the
         // day buckets read in a row / read for the largest. A day that has
         // not got going yet does not break the streak — it has not had
@@ -116,6 +129,7 @@ UIViewController *SGListeningStatsPage(void) {
                 return streak == 1 ? @"1 day" : [NSString stringWithFormat:@"%ld days", (long)streak];
             }),
             SGStatRow(@"Biggest day", ^NSString *{ return biggestText; }),
+            SGStatRow(@"Week over week", ^NSString *{ return wowText; }),
             SGStatRow(@"Songs played", ^NSString *{ return @(plays).stringValue; }),
             SGStatRow(@"Different songs", ^NSString *{ return @(tracks.count).stringValue; }),
         ])];
@@ -181,6 +195,7 @@ UIViewController *SGListeningStatsPage(void) {
             [lines addObject:[NSString stringWithFormat:@"Last 7 days: %@", SGStatsFormatTime(weekSeconds)]];
             [lines addObject:[NSString stringWithFormat:@"Day streak: %ld days", (long)streak]];
             if (biggestKey) [lines addObject:[NSString stringWithFormat:@"Biggest day: %@", biggestText]];
+            [lines addObject:[NSString stringWithFormat:@"Week over week: %@", wowText]];
             [lines addObject:[NSString stringWithFormat:@"Songs played: %ld", (long)plays]];
             [lines addObject:@""];
             [lines addObject:@"Top songs"];

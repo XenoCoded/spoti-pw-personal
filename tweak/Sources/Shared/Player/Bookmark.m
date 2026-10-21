@@ -1,6 +1,7 @@
 // Bookmarks: the Player page's rows. Everything reads the playing track
 // and the karaoke clock at tap time; the jump is the player's seekTo:.
 #import "Bookmark.h"
+#import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Headers/SPTPlayer.h"

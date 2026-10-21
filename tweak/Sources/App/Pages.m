@@ -129,6 +129,7 @@ UIViewController *SGPlayerSettingsPage(void) {
     // Vibrations hook Spotify's own controls and its audio, so they answer under either look.
     [sections addObjectsFromArray:SGVibrationsSections()];
     [sections addObject:SGSection(@"Sleep", SGSleepTimerRows())];
+    [sections addObject:SGSection(@"Queue", SGQueueShareRows())];
 
     return [[SGModPage alloc] initWithTitle:@"Player" intro:SGRestartNote sections:sections footer:nil];
 }

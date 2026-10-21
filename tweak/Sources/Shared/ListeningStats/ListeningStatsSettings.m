@@ -4,6 +4,7 @@
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
 #import "ListeningStats.h"
+#import "Shared/Navigation/Links.h"
 
 static void confirmClear(void) {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Clear listening stats?"
@@ -26,7 +27,10 @@ static NSArray<NSDictionary *> *topTracks(NSDictionary *snapshot, NSUInteger lim
     for (NSString *uri in uris) {
         if (top.count == limit) break;
         if ([tracks[uri][@"seconds"] doubleValue] < 1) continue;
-        [top addObject:tracks[uri]];
+        // The URI rides along (Batch 25): a top song is a door, not a plaque.
+        NSMutableDictionary *entry = [tracks[uri] mutableCopy];
+        entry[@"uri"] = uri;
+        [top addObject:entry];
     }
     return top;
 }
@@ -73,7 +77,10 @@ UIViewController *SGListeningStatsPage(void) {
                 NSString *title = [entry[@"title"] length] ? entry[@"title"] : @"Unknown track";
                 NSString *detail = [NSString stringWithFormat:@"%@ · %@ plays",
                                     SGStatsFormatTime([entry[@"seconds"] doubleValue]), entry[@"plays"]];
-                [rows addObject:SGStatRow(title, ^NSString *{ return detail; })];
+                NSString *uri = entry[@"uri"];
+                [rows addObject:SGStatActionRow(title, entry[@"artist"], ^NSString *{ return detail; }, ^{
+                    if (uri.length) SGOpenSpotifyURI([NSURL URLWithString:uri]);
+                })];
             }
             [sections addObject:SGSection(@"Top songs", rows)];
         }
@@ -82,7 +89,12 @@ UIViewController *SGListeningStatsPage(void) {
             NSMutableArray<SGModRow *> *rows = [NSMutableArray array];
             for (NSDictionary *artist in artists) {
                 NSString *detail = SGStatsFormatTime([artist[@"seconds"] doubleValue]);
-                [rows addObject:SGStatRow(artist[@"name"], ^NSString *{ return detail; })];
+                NSString *name = artist[@"name"];
+                [rows addObject:SGStatActionRow(name, nil, ^NSString *{ return detail; }, ^{
+                    // No artist URI is kept, so the door is a search for them.
+                    NSString *query = [name stringByAddingPercentEncodingWithAllowedCharacters:NSCharacterSet.URLPathAllowedCharacterSet];
+                    if (query) SGOpenSpotifyURI([NSURL URLWithString:[@"spotify:search:" stringByAppendingString:query]]);
+                })];
             }
             [sections addObject:SGSection(@"Top artists", rows)];
         }

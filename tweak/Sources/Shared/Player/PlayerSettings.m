@@ -35,3 +35,52 @@ UIViewController *SGLockScreenSettingsPage(void) {
     ])];
     return [[SGModPage alloc] initWithTitle:@"Lock screen" intro:SGRestartNote sections:sections footer:nil];
 }
+
+// The queue as text: the playing track, then what's up next, one a line —
+// the shape you would paste to a friend. Read from the player the karaoke
+// system already watches; its state's `future` is the same list the Live
+// Activity reads its up-next from.
+#import "Shared/Lyrics/Lyrics.h"
+#import "PlayerState.h"
+#import "Headers/SPTPlayer.h"
+
+static NSTimeInterval sg_copiedAt;
+
+static NSString *queueText(void) {
+    id<SPTPlayer> player = SGKaraokePlayer();
+    SPTPlayerState *state = player.state;
+    if (!state.track) return nil;
+    NSMutableArray<NSString *> *lines = [NSMutableArray array];
+    NSMutableSet<NSString *> *seen = [NSMutableSet set];
+    void (^add)(SPTPlayerTrack *, NSString *) = ^(SPTPlayerTrack *track, NSString *mark) {
+        if (!track.trackTitle.length) return;
+        NSString *uri = SGURIString(track.URI);
+        if (uri && [seen containsObject:uri]) return;
+        if (uri) [seen addObject:uri];
+        NSString *artist = track.artistName.length ? [@" — " stringByAppendingString:track.artistName] : @"";
+        [lines addObject:[NSString stringWithFormat:@"%@%@%@", mark, track.trackTitle, artist]];
+    };
+    add(state.track, @"▶ ");
+    id future = [state respondsToSelector:@selector(future)] ? state.future : nil;
+    if ([future isKindOfClass:NSArray.class]) {
+        for (id candidate in (NSArray *)future) {
+            if ([candidate isKindOfClass:objc_getClass("SPTPlayerTrack")]) add(candidate, @"· ");
+            if (lines.count >= 21) break;
+        }
+    }
+    return lines.count ? [lines componentsJoinedByString:@"\n"] : nil;
+}
+
+NSArray<SGModRow *> *SGQueueShareRows(void) {
+    return @[SGStatActionRow(@"Copy the queue as text",
+        @"The playing song and what's up next, one a line, ready to paste anywhere.",
+        ^NSString *{
+            return NSDate.date.timeIntervalSince1970 - sg_copiedAt < 2.5 ? @"Copied ✓" : @"Copy";
+        },
+        ^{
+            NSString *text = queueText();
+            if (!text) return;
+            UIPasteboard.generalPasteboard.string = text;
+            sg_copiedAt = NSDate.date.timeIntervalSince1970;
+        })];
+}

@@ -15,7 +15,13 @@ static NSString *sg_appliedFor;
 static void check(void) {
     NSString *track = SGKaraokePlayingTrack();
     if (!track) { sg_appliedFor = nil; return; }
-    if ([track isEqualToString:sg_appliedFor]) return;
+    if ([track isEqualToString:sg_appliedFor]) {
+        // A restart is a fresh play and earns a fresh skip; the position
+        // falling back to the start is the only signal there is.
+        NSInteger ms = SGKaraokePositionMs();
+        if (ms >= 0 && ms < 1000) sg_appliedFor = nil;
+        else return;
+    }
     NSDictionary *intros = [NSUserDefaults.standardUserDefaults dictionaryForKey:SGKeyIntros];
     NSNumber *mark = [intros isKindOfClass:NSDictionary.class] ? intros[track] : nil;
     if (!mark) return;

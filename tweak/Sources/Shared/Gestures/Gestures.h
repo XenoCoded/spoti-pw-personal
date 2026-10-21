@@ -32,6 +32,7 @@ typedef NS_ENUM(NSInteger, SGGestureAction) {
     SGGestureCopyCard,
     SGGestureSetBookmark,
     SGGestureGoBookmark,
+    SGGestureCopyLink,
 };
 
 NSArray<NSString *> *SGGestureActionNames(void);

@@ -10,6 +10,7 @@
 #import "Shared/Player/SleepTimer.h"
 #import "Shared/Player/ABRepeat.h"
 #import "Shared/Player/Bookmark.h"
+#import "Shared/Lyrics/Lyrics.h"
 #import "Shared/LyricArtwork/LyricArtwork.h"
 #import "Shared/Player/SpeedPitch.h"
 
@@ -87,6 +88,14 @@ static void perform(SGGestureAction action) {
         case SGGestureGoBookmark:
             SGBookmarkGo();
             break;
+        case SGGestureCopyLink: {
+            NSString *track = SGKaraokePlayingTrack();
+            if (track.length) {
+                UIPasteboard.generalPasteboard.string =
+                    [@"https://open.spotify.com/track/" stringByAppendingString:track];
+            }
+            break;
+        }
     }
 }
 

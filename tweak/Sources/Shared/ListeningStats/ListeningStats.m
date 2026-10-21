@@ -78,6 +78,25 @@ void SGStatsCountPlay(NSString *uri, NSString *title, NSString *artist) {
             [plays removeObjectForKey:old];
         }
     }
+    // Which different songs the day held (Batch 42): plays count repeats,
+    // this set does not. Pruned on the same five-week horizon.
+    NSMutableDictionary *daysTracks = all[@"daysTracks"];
+    if (![daysTracks isKindOfClass:NSMutableDictionary.class]) {
+        daysTracks = [NSMutableDictionary dictionary];
+        all[@"daysTracks"] = daysTracks;
+    }
+    NSMutableArray *todays = daysTracks[today];
+    if (![todays isKindOfClass:NSMutableArray.class]) {
+        todays = [NSMutableArray array];
+        daysTracks[today] = todays;
+    }
+    if (![todays containsObject:uri]) [todays addObject:uri];
+    if (daysTracks.count > 35) {
+        NSArray<NSString *> *sorted = [daysTracks.allKeys sortedArrayUsingSelector:@selector(compare:)];
+        for (NSString *old in [sorted subarrayWithRange:NSMakeRange(0, sorted.count - 35)]) {
+            [daysTracks removeObjectForKey:old];
+        }
+    }
     save();
 }
 

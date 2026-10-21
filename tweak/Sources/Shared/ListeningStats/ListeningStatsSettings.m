@@ -73,6 +73,8 @@ UIViewController *SGListeningStatsPage(void) {
         double todaySeconds = [days[[dayFormat stringFromDate:NSDate.date]] doubleValue];
         NSDictionary *daysPlays = [snapshot[@"daysPlays"] isKindOfClass:NSDictionary.class] ? snapshot[@"daysPlays"] : @{};
         NSInteger todayPlays = [daysPlays[[dayFormat stringFromDate:NSDate.date]] integerValue];
+        NSDictionary *daysTracks = [snapshot[@"daysTracks"] isKindOfClass:NSDictionary.class] ? snapshot[@"daysTracks"] : @{};
+        NSInteger todaySongs = [daysTracks[[dayFormat stringFromDate:NSDate.date]] count];
         double weekSeconds = 0;
         for (NSInteger back = 0; back < 7; back++) {
             NSDate *day = [NSCalendar.currentCalendar dateByAddingUnit:NSCalendarUnitDay value:-back toDate:NSDate.date options:0];
@@ -81,7 +83,10 @@ UIViewController *SGListeningStatsPage(void) {
         [sections addObject:SGSection(@"So far", @[
             SGStatRow(@"Time listened", ^NSString *{ return SGStatsFormatTime(total); }),
             SGStatRow(@"Today", ^NSString *{ return SGStatsFormatTime(todaySeconds); }),
-            SGStatRow(@"Plays today", ^NSString *{ return @(todayPlays).stringValue; }),
+            SGStatRow(@"Plays today", ^NSString *{
+                return todaySongs > 0 ? [NSString stringWithFormat:@"%ld · %ld songs", (long)todayPlays, (long)todaySongs]
+                                      : @(todayPlays).stringValue;
+            }),
             SGStatRow(@"Last 7 days", ^NSString *{ return SGStatsFormatTime(weekSeconds); }),
             SGStatRow(@"Songs played", ^NSString *{ return @(plays).stringValue; }),
             SGStatRow(@"Different songs", ^NSString *{ return @(tracks.count).stringValue; }),
@@ -143,7 +148,8 @@ UIViewController *SGListeningStatsPage(void) {
         SGModRow *export = SGStatActionRow(@"Export stats as text", nil, ^NSString *{ return @"Copy"; }, ^{
             NSMutableArray<NSString *> *lines = [NSMutableArray arrayWithObject:@"Listening stats"];
             [lines addObject:[NSString stringWithFormat:@"Time listened: %@", SGStatsFormatTime(total)]];
-            [lines addObject:[NSString stringWithFormat:@"Today: %@ (%ld plays)", SGStatsFormatTime(todaySeconds), (long)todayPlays]];
+            [lines addObject:[NSString stringWithFormat:@"Today: %@ (%ld plays%@)", SGStatsFormatTime(todaySeconds), (long)todayPlays,
+                todaySongs > 0 ? [NSString stringWithFormat:@", %ld songs", (long)todaySongs] : @""]];
             [lines addObject:[NSString stringWithFormat:@"Last 7 days: %@", SGStatsFormatTime(weekSeconds)]];
             [lines addObject:[NSString stringWithFormat:@"Songs played: %ld", (long)plays]];
             [lines addObject:@""];

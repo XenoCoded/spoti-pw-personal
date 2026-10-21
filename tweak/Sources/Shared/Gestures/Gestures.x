@@ -8,6 +8,7 @@
 #import "Gestures.h"
 #import "Headers/SPTNowPlayingPlaybackController.h"
 #import "Shared/Player/SleepTimer.h"
+#import "Shared/Player/ABRepeat.h"
 #import "Shared/Player/SpeedPitch.h"
 
 static __weak SPTNowPlayingPlaybackControllerImplementation *sg_player;
@@ -63,6 +64,15 @@ static void perform(SGGestureAction action) {
             break;
         case SGGestureSleepTrack:
             SGSleepTimerChoose(5);
+            break;
+        case SGGestureSetA:
+            SGABSetPointA();
+            break;
+        case SGGestureSetB:
+            SGABSetPointB();
+            break;
+        case SGGestureClearAB:
+            SGABClear();
             break;
     }
 }

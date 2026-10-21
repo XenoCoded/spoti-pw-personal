@@ -4,7 +4,8 @@
 
 NSArray<NSString *> *SGGestureActionNames(void) {
     return @[@"Nothing", @"Seek back", @"Seek forward", @"Play or pause", @"Next track",
-             @"Previous track", @"Shuffle", @"Repeat", @"Speed up", @"Speed down", @"Sleep timer: 30 minutes", @"Sleep timer: end of track"];
+             @"Previous track", @"Shuffle", @"Repeat", @"Speed up", @"Speed down", @"Sleep timer: 30 minutes", @"Sleep timer: end of track",
+             @"A-B repeat: set point A", @"A-B repeat: set point B", @"A-B repeat: clear the loop"];
 }
 
 NSArray<NSString *> *SGGestureSplitNames(void) {

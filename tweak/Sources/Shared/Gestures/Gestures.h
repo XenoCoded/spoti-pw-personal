@@ -22,6 +22,11 @@ typedef NS_ENUM(NSInteger, SGGestureAction) {
     // The sleep timer on a tap (Batch 17): set from the player, not a page.
     SGGestureSleep30,
     SGGestureSleepTrack,
+    // The A-B loop's points on a tap (Batch 37): marked in the flow of
+    // listening, which is the only time anyone thinks of them.
+    SGGestureSetA,
+    SGGestureSetB,
+    SGGestureClearAB,
 };
 
 NSArray<NSString *> *SGGestureActionNames(void);

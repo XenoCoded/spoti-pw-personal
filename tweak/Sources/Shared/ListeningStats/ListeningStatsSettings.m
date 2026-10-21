@@ -80,6 +80,30 @@ UIViewController *SGListeningStatsPage(void) {
             NSDate *day = [NSCalendar.currentCalendar dateByAddingUnit:NSCalendarUnitDay value:-back toDate:NSDate.date options:0];
             weekSeconds += [days[[dayFormat stringFromDate:day]] doubleValue];
         }
+        // The streak and the biggest day (Batch 45): both are just the
+        // day buckets read in a row / read for the largest. A day that has
+        // not got going yet does not break the streak — it has not had
+        // its chance.
+        NSInteger streak = 0;
+        for (NSInteger back = (todaySeconds > 0 ? 0 : 1); back < 400; back++) {
+            NSDate *day = [NSCalendar.currentCalendar dateByAddingUnit:NSCalendarUnitDay value:-back toDate:NSDate.date options:0];
+            if ([days[[dayFormat stringFromDate:day]] doubleValue] > 0) streak++;
+            else break;
+        }
+        NSString *biggestKey = nil;
+        double biggestSeconds = 0;
+        for (NSString *key in days) {
+            double value = [days[key] doubleValue];
+            if (value > biggestSeconds) { biggestSeconds = value; biggestKey = key; }
+        }
+        NSString *biggestText = @"—";
+        if (biggestKey) {
+            NSDate *day = [dayFormat dateFromString:biggestKey];
+            NSDateFormatter *pretty = [NSDateFormatter new];
+            pretty.dateFormat = @"MMM d";
+            biggestText = [NSString stringWithFormat:@"%@ · %@",
+                day ? [pretty stringFromDate:day] : biggestKey, SGStatsFormatTime(biggestSeconds)];
+        }
         [sections addObject:SGSection(@"So far", @[
             SGStatRow(@"Time listened", ^NSString *{ return SGStatsFormatTime(total); }),
             SGStatRow(@"Today", ^NSString *{ return SGStatsFormatTime(todaySeconds); }),
@@ -88,6 +112,10 @@ UIViewController *SGListeningStatsPage(void) {
                                       : @(todayPlays).stringValue;
             }),
             SGStatRow(@"Last 7 days", ^NSString *{ return SGStatsFormatTime(weekSeconds); }),
+            SGStatRow(@"Day streak", ^NSString *{
+                return streak == 1 ? @"1 day" : [NSString stringWithFormat:@"%ld days", (long)streak];
+            }),
+            SGStatRow(@"Biggest day", ^NSString *{ return biggestText; }),
             SGStatRow(@"Songs played", ^NSString *{ return @(plays).stringValue; }),
             SGStatRow(@"Different songs", ^NSString *{ return @(tracks.count).stringValue; }),
         ])];
@@ -151,6 +179,8 @@ UIViewController *SGListeningStatsPage(void) {
             [lines addObject:[NSString stringWithFormat:@"Today: %@ (%ld plays%@)", SGStatsFormatTime(todaySeconds), (long)todayPlays,
                 todaySongs > 0 ? [NSString stringWithFormat:@", %ld songs", (long)todaySongs] : @""]];
             [lines addObject:[NSString stringWithFormat:@"Last 7 days: %@", SGStatsFormatTime(weekSeconds)]];
+            [lines addObject:[NSString stringWithFormat:@"Day streak: %ld days", (long)streak]];
+            if (biggestKey) [lines addObject:[NSString stringWithFormat:@"Biggest day: %@", biggestText]];
             [lines addObject:[NSString stringWithFormat:@"Songs played: %ld", (long)plays]];
             [lines addObject:@""];
             [lines addObject:@"Top songs"];

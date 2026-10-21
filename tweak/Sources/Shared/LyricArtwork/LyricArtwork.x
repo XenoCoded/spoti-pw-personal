@@ -1639,10 +1639,28 @@ static UIImage *drawLyricArtwork(CGSize size, NSString *prev, NSString *current,
 // The styles that move, and how long a loop each wants: the ambient ones loop
 // every three seconds; the sweep styles take their line's own length, so the
 // words fill at the speed they are sung.
+// The quality actually rendered at (Batch 23): the user's choice, stepped
+// down a notch while the phone is hot — a clip rendered smaller under heat
+// is tagged with the quality it really is, so nothing is served under a
+// false name later.
+static NSInteger effectiveQuality(void) {
+    NSInteger quality = SGInt(SGKeyLyricArtworkClipQuality, 1);
+    if (NSProcessInfo.processInfo.thermalState >= NSProcessInfoThermalStateSerious) quality -= 1;
+    return MAX(quality, 0);
+}
+
+// True when the phone is asking for mercy: Low Power Mode, or real heat.
+// Warming (work nobody asked for yet) yields to it; the line on screen
+// never does.
+static BOOL powerThrifty(void) {
+    NSProcessInfo *info = NSProcessInfo.processInfo;
+    return info.lowPowerModeEnabled || info.thermalState >= NSProcessInfoThermalStateSerious;
+}
+
 // The clip's size and rate, from the quality choice: Saver for the battery,
 // Max for the full 900x1200 the stills use, Balanced between.
 static void clipSpec(CGSize *size, NSInteger *fps) {
-    switch (SGInt(SGKeyLyricArtworkClipQuality, 1)) {
+    switch (effectiveQuality()) {
         case 0: *size = CGSizeMake(540, 720); *fps = 15; break;
         case 2: *size = CGSizeMake(900, 1200); *fps = 24; break;
         default: *size = CGSizeMake(720, 960); *fps = 20; break;
@@ -1744,7 +1762,7 @@ static void offerClip(NSString *lineKey, NSInteger style, SGKaraokeLine *line,
         return;
     }
     NSString *clipKey = [NSString stringWithFormat:@"%@-%ld-%ld", lineKey, (long)style,
-                         (long)SGInt(SGKeyLyricArtworkClipQuality, 1)];
+                         (long)effectiveQuality()];
     if ([clipKey isEqualToString:sg_clipFor]) return;
     sg_clipFor = clipKey;
     sg_clipArtwork = nil;
@@ -1785,15 +1803,19 @@ static void warmClips(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSInte
                       MPMediaItemArtwork *cover, NSString *title, NSString *artist, double duration) {
     if (!SGFlag(SGKeyLyricArtworkAnimated, NO) || !SGAnimatedArtworkAvailable() || !styleAnimates(style)
         || UIAccessibilityIsReduceMotionEnabled()) return;
+    // Under real heat there is no warming at all (Batch 23); under Low
+    // Power or lesser heat, one line ahead instead of two.
+    if (NSProcessInfo.processInfo.thermalState >= NSProcessInfoThermalStateCritical) return;
+    NSInteger warmDepth = powerThrifty() ? 1 : 2;
     CGSize specSize;
     NSInteger specFps;
     clipSpec(&specSize, &specFps);
     UIImage *coverImage = nil;
-    for (NSInteger ahead = 1; ahead <= 2; ahead++) {
+    for (NSInteger ahead = 1; ahead <= warmDepth; ahead++) {
         NSInteger j = index + ahead;
         if (j < 0 || j >= (NSInteger)lines.count) continue;
         NSString *clipKey = [NSString stringWithFormat:@"%@/%ld-%ld-%ld", trackID, (long)j, (long)style,
-                             (long)SGInt(SGKeyLyricArtworkClipQuality, 1)];
+                             (long)effectiveQuality()];
         if (SGLyricClipCachedFile(clipKey)) continue;
         if (!coverImage) coverImage = cover ? [cover imageWithSize:specSize] : nil;
         NSString *jPrev = j > 0 ? SGKaraokeLineText(lines[j - 1]) : @"";

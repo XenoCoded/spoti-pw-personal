@@ -48,10 +48,17 @@ extension SGLyricsAttributes.Tab {
 // wakes. Playing again sends a state with no deadline and the card is back.
 private struct Retiring<Content: View>: View {
     let state: State
+    var stale: Bool = false
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        if let dismissAt = state.dismissAt {
+        if stale {
+            // The system has marked the activity stale and no dismissal
+            // moment was ever sent — the pausing happened somewhere the
+            // suspended app could not see (Batch 53). A card the system
+            // no longer believes in shows nothing.
+            EmptyView()
+        } else if let dismissAt = state.dismissAt {
             TimelineView(.periodic(from: dismissAt.addingTimeInterval(-120), by: 10)) { context in
                 if context.date >= dismissAt {
                     EmptyView()
@@ -68,7 +75,7 @@ private struct Retiring<Content: View>: View {
 struct SGLyricsLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: SGLyricsAttributes.self) { context in
-            Retiring(state: context.state) {
+            Retiring(state: context.state, stale: context.isStale) {
                 ContentView(state: context.state, upNext: 4)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, context.state.view == .panel ? 12 : 16)
@@ -81,7 +88,7 @@ struct SGLyricsLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.bottom) {
-                    Retiring(state: context.state) {
+                    Retiring(state: context.state, stale: context.isStale) {
                         Group {
                             if context.state.view == .panel {
                                 Summary(state: context.state)
@@ -94,12 +101,12 @@ struct SGLyricsLiveActivity: Widget {
                     }
                 }
             } compactLeading: {
-                Retiring(state: context.state) {
+                Retiring(state: context.state, stale: context.isStale) {
                     Image(systemName: "music.note")
                         .foregroundStyle(green)
                 }
             } compactTrailing: {
-                Retiring(state: context.state) {
+                Retiring(state: context.state, stale: context.isStale) {
                     Group {
                         if let end = context.state.timerEnd, end > Date() {
                             Text(timerInterval: Date()...end, countsDown: true)
@@ -113,7 +120,7 @@ struct SGLyricsLiveActivity: Widget {
                     }
                 }
             } minimal: {
-                Retiring(state: context.state) {
+                Retiring(state: context.state, stale: context.isStale) {
                     Image(systemName: "music.note")
                         .foregroundStyle(green)
                 }

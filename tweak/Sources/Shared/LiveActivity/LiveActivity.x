@@ -19,6 +19,7 @@ API_AVAILABLE(ios(17.0))
             timerEnd:(NSDate *)timerEnd timerEndOfTrack:(BOOL)timerEndOfTrack
          positionSec:(double)positionSec durationSec:(double)durationSec dismissAt:(NSDate *)dismissAt;
 + (void)end;
+@property (class, nonatomic, readonly) BOOL isStale;
 @end
 
 // The control menu's tabs, SGLyricsAttributes.Tab's values.
@@ -175,6 +176,18 @@ static void tick(void) API_AVAILABLE(ios(17.0)) {
         sg_idleSince = nil;
         sg_idleEnded = NO;
     }
+    // The stale reap (Batch 53): the activity the system has already given up
+    // on, over a player that is paused or trackless, is ended on the spot —
+    // the idle clock above restarts with this process, but staleness proves
+    // the deadline passed while it was suspended. Playing is never reaped:
+    // a playing player's updates keep its own stale date ahead of it.
+    if (SGLiveActivityBridge.isShowing && SGLiveActivityBridge.isStale
+        && (!track.trackTitle.length || state.isPaused) && !sg_idleEnded) {
+        [SGLiveActivityBridge end];
+        sg_shown = nil;
+        sg_idleEnded = YES;
+        SGLog(@"live activity: reaped a stale activity over a paused player");
+    }
     NSTimeInterval limit = idleLimit();
     if (limit > 0 && sg_idleSince && -sg_idleSince.timeIntervalSinceNow >= limit
         && SGLiveActivityBridge.isShowing) {
@@ -232,7 +245,12 @@ static void tick(void) API_AVAILABLE(ios(17.0)) {
     NSMutableArray<NSString *> *parts = [NSMutableArray arrayWithObjects:@(view).stringValue, paused ? @"1" : @"0", line, next,
         @(tab).stringValue, title, artist, shuffle ? @"1" : @"0", @(repeatMode).stringValue,
         @((long long)sleepEnd.timeIntervalSince1970).stringValue, endOfTrack ? @"1" : @"0", @((long long)duration).stringValue,
-        @((long long)dismissAt.timeIntervalSince1970).stringValue, nil];
+        @((long long)dismissAt.timeIntervalSince1970).stringValue,
+        // A coarse position bucket (Batch 53): a long stretch on one line
+        // (an instrumental, a podcast) otherwise sends nothing for minutes
+        // and the card goes stale while it is legitimately playing. Half a
+        // minute of movement re-sends; paused, the bucket never moves.
+        paused ? @"0" : @((long long)(position / 30)).stringValue, nil];
     for (NSUInteger i = 0; i < titles.count; i++) [parts addObject:[NSString stringWithFormat:@"%@\t%@\t%@", titles[i], artists[i], uris[i]]];
     send([parts componentsJoinedByString:@"\n"], ^{
         [SGLiveActivityBridge showWithView:view paused:paused line:line nextLine:next titles:titles artists:artists uris:uris

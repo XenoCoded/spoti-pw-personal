@@ -14,6 +14,17 @@ public final class SGLiveActivityBridge: NSObject {
 
     @objc public static var isShowing: Bool { current != nil }
 
+    // The showing activity has been given up on by the system: its state, or a
+    // stale date already past. Pausing from Control Center or another device
+    // never wakes this process to send the dismissal moment, so staleness is
+    // the only evidence the end already happened (Batch 53).
+    @objc public static var isStale: Bool {
+        guard let activity = current else { return false }
+        if activity.activityState == .stale { return true }
+        if let staleDate = activity.content.staleDate { return staleDate < Date() }
+        return false
+    }
+
     // Updates and ends go out one at a time in the order asked for, since ActivityKit applies
     // concurrent ones in whatever order they finish. An update still waiting gives way to a newer one.
     private enum Change: Sendable {
@@ -81,11 +92,13 @@ public final class SGLiveActivityBridge: NSObject {
         // The stale horizon (personal fork): while a paused player's idle end is armed
         // it is the stale date, so the system itself marks the card stale at the very
         // moment it should end — the app, suspended, cannot. Otherwise a rolling
-        // 15 minutes: updates land every line change while anything plays, so the date
-        // is only ever reached when the process is gone — the app closed, the phone
-        // rebooted — and then the system marks the card stale within minutes instead
-        // of presenting its last line as live for hours.
-        let content = ActivityContent(state: state, staleDate: dismissAt ?? Date(timeIntervalSinceNow: 15 * 60))
+        // 5 minutes: updates land every line change while anything plays (and the
+        // fingerprint now carries a coarse position, so even a long instrumental
+        // refreshes it), so the date is only ever reached when the process is
+        // gone — the app closed, the phone rebooted — and then the system marks
+        // the card stale within minutes instead of presenting its last line as
+        // live for hours, and the widget retires a stale card on sight.
+        let content = ActivityContent(state: state, staleDate: dismissAt ?? Date(timeIntervalSinceNow: 5 * 60))
         if let activity = current {
             queue(.update(activity.id, content))
             return

@@ -27,6 +27,9 @@ typedef NS_ENUM(NSInteger, SGGestureAction) {
     SGGestureSetA,
     SGGestureSetB,
     SGGestureClearAB,
+    // The lyric card on a tap (Batch 38): grab the lock screen's picture
+    // without leaving the player.
+    SGGestureCopyCard,
 };
 
 NSArray<NSString *> *SGGestureActionNames(void);

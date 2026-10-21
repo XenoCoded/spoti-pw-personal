@@ -9,6 +9,7 @@
 #import "Headers/SPTNowPlayingPlaybackController.h"
 #import "Shared/Player/SleepTimer.h"
 #import "Shared/Player/ABRepeat.h"
+#import "Shared/LyricArtwork/LyricArtwork.h"
 #import "Shared/Player/SpeedPitch.h"
 
 static __weak SPTNowPlayingPlaybackControllerImplementation *sg_player;
@@ -74,6 +75,11 @@ static void perform(SGGestureAction action) {
         case SGGestureClearAB:
             SGABClear();
             break;
+        case SGGestureCopyCard: {
+            UIImage *card = SGLyricArtworkCurrentCard();
+            if (card) UIPasteboard.generalPasteboard.image = card;
+            break;
+        }
     }
 }
 

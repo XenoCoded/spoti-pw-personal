@@ -43,13 +43,6 @@ static NSMutableDictionary *entryFor(NSString *uri, NSString *title, NSString *a
     return entry;
 }
 
-void SGStatsCountPlay(NSString *uri, NSString *title, NSString *artist) {
-    if (!uri.length) return;
-    NSMutableDictionary *entry = entryFor(uri, title, artist);
-    entry[@"plays"] = @([entry[@"plays"] doubleValue] + 1);
-    save();
-}
-
 // The day a stretch of listening belongs to, in the phone's own calendar.
 static NSString *todayKey(void) {
     static NSDateFormatter *format;
@@ -59,6 +52,29 @@ static NSString *todayKey(void) {
         format.dateFormat = @"yyyy-MM-dd";
     });
     return [format stringFromDate:NSDate.date];
+}
+
+void SGStatsCountPlay(NSString *uri, NSString *title, NSString *artist) {
+    if (!uri.length) return;
+    NSMutableDictionary *entry = entryFor(uri, title, artist);
+    entry[@"plays"] = @([entry[@"plays"] doubleValue] + 1);
+    // Plays per day (Batch 38), beside the seconds per day: "Today" on the
+    // stats page gets its count as well as its time.
+    NSMutableDictionary *all = stats();
+    NSMutableDictionary *plays = all[@"daysPlays"];
+    if (![plays isKindOfClass:NSMutableDictionary.class]) {
+        plays = [NSMutableDictionary dictionary];
+        all[@"daysPlays"] = plays;
+    }
+    NSString *today = todayKey();
+    plays[today] = @([plays[today] doubleValue] + 1);
+    if (plays.count > 35) {
+        NSArray<NSString *> *sorted = [plays.allKeys sortedArrayUsingSelector:@selector(compare:)];
+        for (NSString *old in [sorted subarrayWithRange:NSMakeRange(0, sorted.count - 35)]) {
+            [plays removeObjectForKey:old];
+        }
+    }
+    save();
 }
 
 void SGStatsAddListening(NSString *uri, NSTimeInterval seconds) {

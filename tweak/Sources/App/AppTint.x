@@ -39,6 +39,19 @@ static void tintTree(UIView *view, UIColor *color) {
     for (UIView *child in view.subviews) tintTree(child, color);
 }
 
+// Refreshes are debounced (Batch 21 audit): the palette can announce itself
+// several times as a cover lands, and walking every window for each one is
+// waste. One walk, a beat after the last announcement.
+static dispatch_block_t sg_pendingRefresh;
+static void refreshTintSoon(void) {
+    if (sg_pendingRefresh) dispatch_block_cancel(sg_pendingRefresh);
+    sg_pendingRefresh = dispatch_block_create(DISPATCH_BLOCK_INHERIT_QOS_CLASS, ^{
+        refreshTint();
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), sg_pendingRefresh);
+}
+
 // Every window again: a new song's colour is only worth having if the
 // controls already on screen take it too.
 static void refreshTint(void) {
@@ -92,7 +105,7 @@ static void refreshTint(void) {
     [NSNotificationCenter.defaultCenter addObserverForName:SGArtworkPaletteChangedNotification
                                                       object:nil
                                                        queue:NSOperationQueue.mainQueue
-                                                  usingBlock:^(NSNotification *note) { refreshTint(); }];
+                                                  usingBlock:^(NSNotification *note) { refreshTintSoon(); }];
     dispatch_async(dispatch_get_main_queue(), ^{ refreshTint(); });
     SGLog(@"app tint: on");
 }

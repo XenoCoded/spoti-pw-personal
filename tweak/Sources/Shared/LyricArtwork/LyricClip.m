@@ -8,6 +8,15 @@
 #import "LyricClip.h"
 
 static const NSUInteger kKeptClips = 60;
+// A count alone is no ceiling: at Max quality a clip runs to several MB, so
+// the cache is also held under a byte budget (Batch 21 audit).
+static const unsigned long long kKeptBytes = 120ULL * 1024 * 1024;
+// The key whose clip is on screen right now; pruning never takes it.
+static NSString *sg_protectedKey;
+
+void SGLyricClipSetProtected(NSString *key) {
+    sg_protectedKey = [key copy];
+}
 
 static dispatch_queue_t clipQueue(void) {
     static dispatch_queue_t queue;
@@ -83,18 +92,28 @@ NSURL *SGLyricClipCachedFile(NSString *key) {
 static void prune(void) {
     NSFileManager *files = NSFileManager.defaultManager;
     NSMutableArray<NSURL *> *urls = [NSMutableArray array];
+    unsigned long long total = 0;
     for (NSString *name in [files contentsOfDirectoryAtPath:clipDirectory() error:nil]) {
         if ([name.pathExtension isEqualToString:@"mp4"]) {
-            [urls addObject:[NSURL fileURLWithPath:[clipDirectory() stringByAppendingPathComponent:name]]];
+            NSURL *url = [NSURL fileURLWithPath:[clipDirectory() stringByAppendingPathComponent:name]];
+            [urls addObject:url];
+            total += [[url resourceValuesForKeys:@[NSURLFileSizeKey] error:nil][NSURLFileSizeKey] unsignedLongLongValue];
         }
     }
-    if (urls.count <= kKeptClips) return;
+    if (urls.count <= kKeptClips && total <= kKeptBytes) return;
     [urls sortUsingComparator:^NSComparisonResult(NSURL *a, NSURL *b) {
         NSDate *da = [a resourceValuesForKeys:@[NSURLContentModificationDateKey] error:nil][NSURLContentModificationDateKey];
         NSDate *db = [b resourceValuesForKeys:@[NSURLContentModificationDateKey] error:nil][NSURLContentModificationDateKey];
         return [da compare:db];
     }];
-    for (NSUInteger i = 0; i < urls.count - kKeptClips; i++) [files removeItemAtURL:urls[i] error:nil];
+    NSString *protectedName = sg_protectedKey ? [clipPath(sg_protectedKey) lastPathComponent] : nil;
+    NSUInteger remaining = urls.count;
+    for (NSURL *url in urls) {
+        if (remaining <= kKeptClips && total <= kKeptBytes) break;
+        if ([url.lastPathComponent isEqualToString:protectedName]) continue;
+        total -= [[url resourceValuesForKeys:@[NSURLFileSizeKey] error:nil][NSURLFileSizeKey] unsignedLongLongValue];
+        if ([files removeItemAtURL:url error:nil]) remaining--;
+    }
 }
 
 void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duration,
@@ -148,8 +167,18 @@ void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duratio
         CGColorSpaceRef rgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
         NSInteger frames = MAX(2, (NSInteger)round(duration * fps));
         for (NSInteger frame = 0; frame < frames && ok; frame++) {
+            // A writer that stops accepting frames (a full disk, a sick
+            // session) must not hold the serial queue hostage: five seconds
+            // of stall aborts the render and the line keeps its still.
+            NSTimeInterval stallStart = 0;
             while (!input.readyForMoreMediaData) {
                 if (writer.status != AVAssetWriterStatusWriting) { ok = NO; break; }
+                if (!stallStart) stallStart = NSDate.date.timeIntervalSince1970;
+                if (NSDate.date.timeIntervalSince1970 - stallStart > 5) {
+                    SGLog(@"lyric clip: writer stalled, aborting %@", key);
+                    ok = NO;
+                    break;
+                }
                 [NSThread sleepForTimeInterval:0.005];
             }
             if (!ok) break;

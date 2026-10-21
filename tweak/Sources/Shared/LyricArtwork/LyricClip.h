@@ -8,6 +8,8 @@
 
 // What the clip cache weighs, and emptying it (the Storage rows).
 unsigned long long SGLyricClipCacheBytes(void);
+// Mark a key as on screen: pruning leaves its clip alone (Batch 21).
+void SGLyricClipSetProtected(NSString *key);
 void SGLyricClipCacheClear(void);
 // The cached clip for a key (track/line/style), or nil when none is rendered yet.
 NSURL *SGLyricClipCachedFile(NSString *key);

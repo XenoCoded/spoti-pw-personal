@@ -25,6 +25,22 @@ static void disarm(void) {
     [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeySleepTimerTrack];
 }
 
+// Two paces (Batch 21 audit): an NSTimer cannot change its interval, so the
+// timer is put down and another raised — one second while a countdown is
+// armed (the end-of-track window is 1.5 s), fifteen while it is not, which
+// is nearly all of the time. Arming from the settings page can lag up to
+// the idle pace; the spans are fifteen minutes and up.
+static NSTimer *sg_pace;
+static BOOL sg_armedPace;
+static void check(void);
+static void setPace(BOOL armed) {
+    if (sg_pace && sg_armedPace == armed) return;
+    sg_armedPace = armed;
+    [sg_pace invalidate];
+    sg_pace = [NSTimer timerWithTimeInterval:armed ? 1 : 15 repeats:YES block:^(NSTimer *t) { check(); }];
+    [NSRunLoop.mainRunLoop addTimer:sg_pace forMode:NSRunLoopCommonModes];
+}
+
 static void timerUp(id<SPTPlayer> player) {
     disarm();
     [NSUserDefaults.standardUserDefaults setInteger:0 forKey:SGKeySleepTimer];
@@ -37,8 +53,10 @@ static void check(void) {
     NSInteger choice = [defaults integerForKey:SGKeySleepTimer];
     if (choice <= 0) {
         if ([defaults objectForKey:SGKeySleepTimerEnd] || [defaults objectForKey:SGKeySleepTimerTrack]) disarm();
+        setPace(NO);
         return;
     }
+    setPace(YES);
     id<SPTPlayer> player = SGKaraokePlayer();
     if (!player) return;
     if (choice == 5) {
@@ -71,8 +89,8 @@ static void check(void) {
 
 %ctor {
     dispatch_async(dispatch_get_main_queue(), ^{
-        NSTimer *timer = [NSTimer timerWithTimeInterval:1 repeats:YES block:^(NSTimer *t) { check(); }];
-        [NSRunLoop.mainRunLoop addTimer:timer forMode:NSRunLoopCommonModes];
+        setPace(NO);
+        check();
     });
     SGLog(@"sleep timer: watching");
 }

@@ -1296,14 +1296,18 @@ static void drawStarburst(SGWCtx *c) {
 // Print: newsprint — the cover as halftone dots dissolving into paper, a red
 // tag, and the line in serif over black marker bars.
 static UIImage *halftoneOf(UIImage *cover) {
-    static UIImage *memo, *memoFor;
-    if (memo && memoFor == cover) return memo;
+    // Keyed on the CGImage, not the UIImage (Batch 21 audit): the same
+    // bitmap arrives in a fresh wrapper on many draws, and a wrapper key
+    // missed every time, re-filtering the dearest draw in the set.
+    static UIImage *memo;
+    static CGImageRef memoFor;
+    if (memo && memoFor == cover.CGImage) return memo;
     CIFilter *dots = [CIFilter filterWithName:@"CIDotScreen"];
     [dots setValue:[CIImage imageWithCGImage:cover.CGImage] forKey:kCIInputImageKey];
     [dots setValue:@(6.0) forKey:@"inputWidth"];
     [dots setValue:@(0.75) forKey:@"inputSharpness"];
     memo = ciResult(cover, dots);
-    memoFor = cover;
+    memoFor = cover.CGImage;
     return memo;
 }
 
@@ -1749,6 +1753,7 @@ static void offerClip(NSString *lineKey, NSInteger style, SGKaraokeLine *line,
         if (!file) return;
         id clip = clipArtworkFor(clipKey, file, still);
         if (!clip) return;
+        SGLyricClipSetProtected(clipKey);
         @synchronized (sg_lock) { sg_clipArtwork = clip; }
         SGLog(@"lyric artwork: clip up for %@", clipKey);
         resend();
@@ -1841,6 +1846,15 @@ static void prefetchNext(void) {
         if (![uri hasPrefix:@"spotify:track:"]) continue;
         NSString *nextID = [uri substringFromIndex:14];
         if ([nextID isEqualToString:sg_prefetched]) return;
+        // Hysteresis (Batch 21 audit): skipping around changes `future`
+        // every few hundred milliseconds, and a fetch per flicker is waste.
+        // A candidate has to still be next a tick later (one second on)
+        // before anything is fetched for it.
+        static NSString *candidate;
+        static NSInteger candidateTicks;
+        if ([nextID isEqualToString:candidate]) candidateTicks++;
+        else { candidate = nextID; candidateTicks = 1; }
+        if (candidateTicks < 2) return;
         sg_prefetched = nextID;
         if (!SGKaraokeLinesForTrack(nextID)) {
             SGKaraokeRequestLyrics(nextID);
@@ -1944,25 +1958,39 @@ static UIImage *sampleCover(CGSize size) {
 }
 
 UIImage *SGLyricArtworkSample(NSInteger style, CGSize size) {
+    // The picker's thumbnails, cached per cover (Batch 21 audit): reopening
+    // the page used to re-render all twenty-six from nothing.
+    static NSMutableDictionary<NSString *, UIImage *> *cache;
+    static MPMediaItemArtwork *cacheCover;
+    MPMediaItemArtwork *coverNow;
+    @synchronized (sg_lock) { coverNow = sg_cover; }
+    if (cacheCover != coverNow) {
+        cache = [NSMutableDictionary dictionary];
+        cacheCover = coverNow;
+    }
+    NSString *cacheKey = [NSString stringWithFormat:@"%ld@%.0fx%.0f", (long)style, size.width, size.height];
+    if (cache[cacheKey]) return cache[cacheKey];
     NSString *prev = @"we were running out of time";
     NSString *current = @"drive through the night with the windows down";
     NSString *next = @"till the city turns to light";
     NSString *title = @"Midnight Run";
     NSString *artist = @"The Night Drivers";
     UIImage *cover = sampleCover(size);
+    UIImage *drawn;
     @synchronized (sg_lock) {
         if (style == SGLyricArtworkRecord) {
-            return drawRecordArtwork(size, prev, current, next, cover, nil, title, artist);
+            drawn = drawRecordArtwork(size, prev, current, next, cover, nil, title, artist);
+        } else if (style == SGLyricArtworkChat) {
+            drawn = drawChatArtwork(size, prev, current, next, cover, title, artist);
+        } else if (style >= SGLyricArtworkTwitter) {
+            drawn = drawWorkshopArtwork(style, size, prev, current, next, cover, nil, title, artist,
+                                        11, 38, 0, 0, 214);
+        } else {
+            drawn = drawLyricArtwork(size, prev, current, next, style, cover, nil, title, artist);
         }
-        if (style == SGLyricArtworkChat) {
-            return drawChatArtwork(size, prev, current, next, cover, title, artist);
-        }
-        if (style >= SGLyricArtworkTwitter) {
-            return drawWorkshopArtwork(style, size, prev, current, next, cover, nil, title, artist,
-                                       11, 38, 0, 0, 214);
-        }
-        return drawLyricArtwork(size, prev, current, next, style, cover, nil, title, artist);
     }
+    if (drawn) cache[cacheKey] = drawn;
+    return drawn;
 }
 
 %hook MPNowPlayingInfoCenter

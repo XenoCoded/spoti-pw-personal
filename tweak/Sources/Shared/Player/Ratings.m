@@ -10,7 +10,13 @@
 
 static NSMutableDictionary<NSString *, NSNumber *> *ratings(void) {
     NSDictionary *stored = [NSUserDefaults.standardUserDefaults dictionaryForKey:SGKeyRatings];
-    return stored ? [stored mutableCopy] : [NSMutableDictionary dictionary];
+    // Only numbers come back (Batch 90): every reader does arithmetic on
+    // these values, and a store written by anything else — an import, an
+    // older build — is not promised to hold numbers.
+    NSMutableDictionary<NSString *, NSNumber *> *clean = [NSMutableDictionary dictionary];
+    for (NSString *uri in stored)
+        if ([stored[uri] isKindOfClass:NSNumber.class]) clean[uri] = stored[uri];
+    return clean;
 }
 
 NSInteger SGRatingForURI(NSString *uri) {

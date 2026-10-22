@@ -17,7 +17,15 @@ static const NSInteger kBreakMs = 4000;
 static const NSUInteger kMaxChars = 30;
 
 // Spotify may set the info from any thread; the timer reads it on the main one.
-static NSObject *sg_lock;
+// Created on first use (Batch 90): as a %ctor assignment behind the
+// flag gate this was the picker's nil-lock shape in miniature — safe
+// only while nothing outside the gate can reach it.
+static NSObject *sg_lockObject(void) {
+    static NSObject *lock;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ lock = [NSObject new]; });
+    return lock;
+}
 static NSDictionary *sg_spotifyInfo;
 static CFAbsoluteTime sg_spotifyInfoAt;
 static NSString *sg_shownLine;
@@ -95,7 +103,7 @@ static NSDictionary *withLine(NSDictionary *info, NSString *line, double elapsed
 static void tick(void) {
     NSDictionary *info;
     CFAbsoluteTime reportedAt;
-    @synchronized (sg_lock) {
+    @synchronized (sg_lockObject()) {
         info = sg_spotifyInfo;
         reportedAt = sg_spotifyInfoAt;
     }
@@ -136,7 +144,7 @@ static BOOL playingBy(NSDictionary *info) {
         return;
     }
     CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
-    @synchronized (sg_lock) {
+    @synchronized (sg_lockObject()) {
         sg_spotifyInfo = info;
         sg_spotifyInfoAt = now;
     }
@@ -159,7 +167,7 @@ static BOOL playingBy(NSDictionary *info) {
 
 - (NSDictionary *)nowPlayingInfo {
     NSDictionary *info;
-    @synchronized (sg_lock) {
+    @synchronized (sg_lockObject()) {
         info = sg_spotifyInfo;
     }
     return info ?: %orig;
@@ -168,7 +176,6 @@ static BOOL playingBy(NSDictionary *info) {
 
 %ctor {
     if (!SGFlag(SGKeyLockScreenLyrics, NO)) return;
-    sg_lock = [NSObject new];
     %init;
     // The timer waits for Spotify to report a playing track; nothing before that has a line to show.
     SGLog(@"lock screen lyrics: on");

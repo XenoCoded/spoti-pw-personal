@@ -24,7 +24,7 @@ static void check(void) {
     }
     NSDictionary *intros = [NSUserDefaults.standardUserDefaults dictionaryForKey:SGKeyIntros];
     NSNumber *mark = [intros isKindOfClass:NSDictionary.class] ? intros[track] : nil;
-    if (!mark) return;
+    if (![mark isKindOfClass:NSNumber.class]) return;
     NSInteger ms = SGKaraokePositionMs();
     if (ms < 0) return;
     double position = ms / 1000.0;

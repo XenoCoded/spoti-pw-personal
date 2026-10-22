@@ -89,20 +89,32 @@ SGLyricsAsk SGLyricsCacheAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResu
     }
     BOOL wordTimed = [sheet[@"wordTimed"] boolValue];
     NSMutableArray<SGKaraokeLine *> *lines = [NSMutableArray array];
+    // The file is not trusted (Batch 90): it outlives the build that
+    // wrote it, across every sideload, and the readers downstream join
+    // the words' text with KVC — a missing or non-string text came back
+    // as NSNull and threw there. Every field is kind-checked here, the
+    // way the writer guards its own side.
     for (NSDictionary *entry in sheet[@"lines"]) {
+        if (![entry isKindOfClass:NSDictionary.class]) continue;
         SGKaraokeLine *line = [SGKaraokeLine new];
         line.start = [entry[@"start"] integerValue];
         line.end = [entry[@"end"] integerValue];
-        line.translation = entry[@"translation"];
+        id translation = entry[@"translation"];
+        line.translation = [translation isKindOfClass:NSString.class] ? translation : nil;
         line.timing = wordTimed ? SGKaraokeTimingWords : SGKaraokeTimingLine;
         NSMutableArray<SGKaraokeWord *> *words = [NSMutableArray array];
-        for (NSDictionary *wordEntry in entry[@"words"]) {
-            SGKaraokeWord *word = [SGKaraokeWord new];
-            word.text = wordEntry[@"text"];
-            word.start = [wordEntry[@"start"] integerValue];
-            word.end = [wordEntry[@"end"] integerValue];
-            word.joined = [wordEntry[@"joined"] boolValue];
-            [words addObject:word];
+        id wordEntries = entry[@"words"];
+        if ([wordEntries isKindOfClass:NSArray.class]) {
+            for (NSDictionary *wordEntry in wordEntries) {
+                if (![wordEntry isKindOfClass:NSDictionary.class]) continue;
+                SGKaraokeWord *word = [SGKaraokeWord new];
+                id text = wordEntry[@"text"];
+                word.text = [text isKindOfClass:NSString.class] ? text : @"";
+                word.start = [wordEntry[@"start"] integerValue];
+                word.end = [wordEntry[@"end"] integerValue];
+                word.joined = [wordEntry[@"joined"] boolValue];
+                [words addObject:word];
+            }
         }
         line.words = words;
         [lines addObject:line];

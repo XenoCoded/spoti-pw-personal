@@ -408,7 +408,15 @@ static void syncBar(UIView *stockBar) {
         for (UIView *source in sources) {
             UIView *live = iconIn(source);
             id icon = live ? encoreIconOf(live) : nil;
-            id variant = [icon respondsToSelector:NSSelectorFromString(@"active")] ? ((id (*)(id, SEL))objc_msgSend)(icon, NSSelectorFromString(@"active")) : nil;
+            // Probed the way the navbars probe their glyphs (Batch 90):
+            // respondsToSelector alone does not promise an object comes
+            // back — the method's type encoding has to say so before the
+            // msgSend result is messaged as one.
+            SEL activeSel = NSSelectorFromString(@"active");
+            Method activeMethod = icon ? class_getInstanceMethod(object_getClass(icon), activeSel) : NULL;
+            const char *activeTypes = activeMethod ? method_getTypeEncoding(activeMethod) : NULL;
+            id variant = (icon && activeTypes && activeTypes[0] == '@')
+                ? ((id (*)(id, SEL))objc_msgSend)(icon, activeSel) : nil;
             [out appendFormat:@"\n  %@: %@ icon %@ active-variant %@ live-isActive %d label-white %d", labelIn(source).text, NSStringFromClass(live.class),
                  [icon respondsToSelector:@selector(name)] ? [icon name] : icon, [variant respondsToSelector:@selector(name)] ? [variant name] : variant,
                  [live respondsToSelector:@selector(isActive)] ? [(SPTEncoreIconView *)live isActive] : -1, isActive(source)];

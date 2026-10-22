@@ -7,8 +7,14 @@
 #import "Headers/SPTPlayer.h"
 
 static NSMutableDictionary<NSString *, NSNumber *> *bookmarks(void) {
+    // Only numbers come back (Batch 90), as in Ratings: the readers do
+    // arithmetic on these values and the store is not promised to
+    // hold numbers.
     NSDictionary *stored = [NSUserDefaults.standardUserDefaults dictionaryForKey:SGKeyBookmarks];
-    return stored ? [stored mutableCopy] : [NSMutableDictionary dictionary];
+    NSMutableDictionary<NSString *, NSNumber *> *clean = [NSMutableDictionary dictionary];
+    for (NSString *track in stored)
+        if ([stored[track] isKindOfClass:NSNumber.class]) clean[track] = stored[track];
+    return clean;
 }
 
 static void saveBookmarks(NSDictionary *marks) {
@@ -45,7 +51,10 @@ void SGBookmarkGo(void) {
 
 static NSMutableDictionary<NSString *, NSNumber *> *intros(void) {
     NSDictionary *stored = [NSUserDefaults.standardUserDefaults dictionaryForKey:SGKeyIntros];
-    return stored ? [stored mutableCopy] : [NSMutableDictionary dictionary];
+    NSMutableDictionary<NSString *, NSNumber *> *clean = [NSMutableDictionary dictionary];
+    for (NSString *track in stored)
+        if ([stored[track] isKindOfClass:NSNumber.class]) clean[track] = stored[track];
+    return clean;
 }
 
 static double introFor(NSString *track) {

@@ -57,17 +57,25 @@ void SGArtworkCancelFetch(void) {
     [task cancel];
 }
 
+// Completions land on the main queue whichever path produced them
+// (Batch 90): the immediate answers used to fire on the caller's
+// thread, a failure on the session's queue and a success on the file
+// queue, and the one consumer had to tolerate all three.
+static void finish(void (^done)(NSURL *file, NSString *note), NSURL *file, NSString *note) {
+    dispatch_async(dispatch_get_main_queue(), ^{ done(file, note); });
+}
+
 void SGArtworkFetch(NSString *identifier, NSString *address, void (^done)(NSURL *file, NSString *note)) {
     SGArtworkCancelFetch();
     NSURL *remote = address.length ? [NSURL URLWithString:address] : nil;
     if (!remote) {
-        done(nil, @"no address");
+        finish(done, nil, @"no address");
         return;
     }
     NSURL *local = fileFor([identifier stringByAppendingPathExtension:@"mp4"]);
     if ([NSFileManager.defaultManager fileExistsAtPath:local.path]) {
         dispatch_async(queue(), ^{ touch(local); });
-        done(local, @"cached");
+        finish(done, local, @"cached");
         return;
     }
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:remote];
@@ -75,7 +83,7 @@ void SGArtworkFetch(NSString *identifier, NSString *address, void (^done)(NSURL 
     request.allowsConstrainedNetworkAccess = NO;
     sg_task = [NSURLSession.sharedSession downloadTaskWithRequest:request completionHandler:^(NSURL *temporary, NSURLResponse *response, NSError *error) {
         if (!temporary) {
-            done(nil, [NSString stringWithFormat:@"download failed: %@", error.localizedDescription]);
+            finish(done, nil, [NSString stringWithFormat:@"download failed: %@", error.localizedDescription]);
             return;
         }
         long long length = response.expectedContentLength;
@@ -84,7 +92,7 @@ void SGArtworkFetch(NSString *identifier, NSString *address, void (^done)(NSURL 
             [NSFileManager.defaultManager removeItemAtURL:local error:nil];
             BOOL moved = [NSFileManager.defaultManager moveItemAtURL:temporary toURL:local error:&move];
             if (moved) prune();
-            done(moved ? local : nil, moved ? [NSString stringWithFormat:@"downloaded %lld KB", length / 1024]
+            finish(done, moved ? local : nil, moved ? [NSString stringWithFormat:@"downloaded %lld KB", length / 1024]
                                             : [NSString stringWithFormat:@"not kept: %@", move.localizedDescription]);
         });
     }];

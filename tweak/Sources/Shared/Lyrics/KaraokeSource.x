@@ -318,9 +318,16 @@ static void prefetch(SPTPlayerTrack *track, NSString *trackID, SPTPlayerState *s
 %end
 
 %ctor {
-    // The sources that search by name learn the name from the player, so the player is caught
-    // whenever one is on, not only for the redesign's lyrics and the lock screen.
-    if (!SGRedesignedUI() && !SGFlag(SGKeyLockScreenLyrics, NO) && !SGLyricsEnabled()) return;
+    // No gate (Batch 90): the old one installed the engine only for the
+    // redesign's lyrics, the lock screen's lyrics, or a mod lyrics
+    // source — but the player this file captures and the lines it keeps
+    // are also what lyric artwork, the Live Activity, the TV page, the
+    // widgets, and the seek-based watchers (intro skip, A-B repeat,
+    // scan, auto-resume, sleep timer) read. In a session with none of
+    // the three gated features on, all of those silently had no player
+    // and no lines. The capture is cheap: responses are only buffered
+    // when their URL names a track's lyrics, and every exported
+    // function stays nil-tolerant when nothing has been captured.
     sg_seenTracks = [NSMutableDictionary dictionary];
     sg_lyrics = [NSMutableDictionary dictionary];
     sg_requested = [NSMutableSet set];

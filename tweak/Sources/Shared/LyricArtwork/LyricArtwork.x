@@ -2085,7 +2085,11 @@ static void tick(void) {
     double duration = [player.state respondsToSelector:@selector(duration)] ? player.state.duration : 0;
     MPMediaItemArtwork *cover;
     @synchronized (sg_lockObject()) { cover = sg_cover; }
-    sg_artwork = [[MPMediaItemArtwork alloc] initWithBoundsSize:CGSizeMake(900, 1200)
+    // Built aside and stored under the lock (Batch 90): the strong static
+    // used to be assigned bare here while the now playing hook and the
+    // card reader take it under the lock — the same storeStrong race the
+    // picker fixes removed elsewhere in this file.
+    MPMediaItemArtwork *fresh = [[MPMediaItemArtwork alloc] initWithBoundsSize:CGSizeMake(900, 1200)
         requestHandler:^UIImage *(CGSize size) {
             @synchronized (sg_lockObject()) {
                 UIImage *coverImage = cover ? [cover imageWithSize:size] : nil;
@@ -2102,6 +2106,7 @@ static void tick(void) {
                 return drawLyricArtwork(size, prev, current, next, style, coverImage, line, title, artist);
             }
         }];
+    @synchronized (sg_lockObject()) { sg_artwork = fresh; }
     offerClip(key, style, line, prev, current, next, cover, title, artist,
               lineIndex, lineCount, prevStart, nextStart, duration);
     warmClips(trackID, lines, index, style, cover, title, artist, duration);
@@ -2202,6 +2207,15 @@ UIImage *SGLyricArtworkSample(NSInteger style, CGSize size) {
     return drawn;
 }
 
+// The animated artwork's key in the info dictionary, computed once
+// rather than lazily inside the hook, whose threads are not one.
+static NSString *sg_animatedKey(void) {
+    static NSString *key;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ key = SGAnimatedArtworkKey(NULL); });
+    return key;
+}
+
 %hook MPNowPlayingInfoCenter
 - (void)setNowPlayingInfo:(NSDictionary *)info {
     MPMediaItemArtwork *artwork;
@@ -2225,9 +2239,7 @@ UIImage *SGLyricArtworkSample(NSInteger style, CGSize size) {
         shown = swapped;
     }
     if (priority == 0 && clip) {
-        static NSString *animatedKey;
-        if (!animatedKey) animatedKey = SGAnimatedArtworkKey(NULL);
-        shown = SGArtworkInInfo(shown, clip, animatedKey);
+        shown = SGArtworkInInfo(shown, clip, sg_animatedKey());
     }
     %orig(shown);
 }

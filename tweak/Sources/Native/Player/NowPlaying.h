@@ -27,12 +27,6 @@
 #define SGHideMerch @"spotifyglass.hide.merch"
 #define SGHideRecommendations @"spotifyglass.hide.recommendations"
 
-// The welcome tour's one switch for the player: on hides every card under the player but the
-// lyrics, off shows them again. The player's buttons are not its business. Only the tour reads
-// it; the hooks read the keys above.
-#define SGKeyPlayerLyricsOnly @"spotifyglass.hide.playerLyricsOnly"
-void SGSetPlayerLyricsOnly(BOOL on);
-
 // Focus player (Batch 64): one switch over the whole declutter — every card under the player
 // folds away and the player's side buttons (shuffle, repeat, connect, share, queue, add-to)
 // leave with them, so the screen is the cover, the song and the transport. The hooks in

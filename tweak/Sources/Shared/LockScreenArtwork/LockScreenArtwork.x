@@ -15,7 +15,15 @@ static NSString *const kCanvazAddress = @"https://spclient.wg.spotify.com/canvaz
 
 // Spotify sets the now playing info from several threads; what the hook reads is behind the lock and
 // everything else is main thread.
-static NSObject *sg_lock;
+// Created on first use (Batch 90), the same defusing as the lyric
+// artwork's lock: a %ctor-created lock is one refactor away from a
+// session where it was never made.
+static NSObject *sg_lockObject(void) {
+    static NSObject *lock;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ lock = [NSObject new]; });
+    return lock;
+}
 static NSDictionary *sg_info;
 static CFAbsoluteTime sg_infoAt;
 static MPMediaItemArtwork *sg_cover;
@@ -29,7 +37,7 @@ static CGFloat sg_aspect;
 
 static UIImage *coverImage(CGSize size) {
     MPMediaItemArtwork *cover;
-    @synchronized (sg_lock) {
+    @synchronized (sg_lockObject()) {
         cover = sg_cover;
     }
     return [cover imageWithSize:size] ?: [cover imageWithSize:cover.bounds.size];
@@ -84,7 +92,7 @@ static NSString *artistOf(SPTPlayerTrack *track) {
 static void resend(void) {
     NSDictionary *info;
     CFAbsoluteTime reportedAt;
-    @synchronized (sg_lock) {
+    @synchronized (sg_lockObject()) {
         info = sg_info;
         reportedAt = sg_infoAt;
     }
@@ -113,7 +121,7 @@ static void play(NSString *uri, SGCanvas *canvas, NSString *source) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     if (![sg_wanted isEqualToString:uri]) return;
                     id artwork = artworkFor([canvas.identifier stringByAppendingString:uri], ready, still);
-                    @synchronized (sg_lock) {
+                    @synchronized (sg_lockObject()) {
                         sg_artwork = artwork;
                         sg_key = sg_offered;
                     }
@@ -197,7 +205,7 @@ static void resolve(SPTPlayerTrack *track) {
             sg_wanted = nil;
             SGArtworkCancelFetch();
             sg_playing = nil;
-            @synchronized (sg_lock) {
+            @synchronized (sg_lockObject()) {
                 sg_artwork = nil;
                 sg_key = nil;
             }
@@ -221,7 +229,7 @@ static void resolve(SPTPlayerTrack *track) {
     sg_wanted = uri;
     sg_playing = nil;
     SGArtworkCancelFetch();
-    @synchronized (sg_lock) {
+    @synchronized (sg_lockObject()) {
         sg_artwork = nil;
         sg_key = nil;
     }
@@ -252,7 +260,7 @@ static SGArtworkWatcher *sg_watcher;
 - (void)setNowPlayingInfo:(NSDictionary *)info {
     id artwork;
     NSString *key;
-    @synchronized (sg_lock) {
+    @synchronized (sg_lockObject()) {
         if (info[MPMediaItemPropertyArtwork]) sg_cover = info[MPMediaItemPropertyArtwork];
         sg_info = info;
         sg_infoAt = CFAbsoluteTimeGetCurrent();
@@ -268,7 +276,6 @@ static SGArtworkWatcher *sg_watcher;
         SGLog(@"lock artwork: off, animated artwork needs iOS 26");
         return;
     }
-    sg_lock = [NSObject new];
     sg_watcher = [SGArtworkWatcher new];
     SGAddPlayerStateObserver(sg_watcher);
     %init;

@@ -60,11 +60,18 @@ static void serveClient(int fd) {
     }
 }
 
-static void acceptLoop(void) {
-    while (sg_serving) {
-        struct pollfd pfd = {sg_listen, POLLIN, 0};
+// A generation per server run (Batch 90): the loop used to poll the
+// shared sg_listen and the shared serving flag, so a fast off-on left
+// the old loop looking at the new listener — its fd number reused —
+// and it never went away. A loop now serves only its own generation
+// and its own socket.
+static NSUInteger sg_acceptGeneration;
+
+static void acceptLoop(NSUInteger generation, int listenFd) {
+    while (sg_serving && generation == sg_acceptGeneration) {
+        struct pollfd pfd = {listenFd, POLLIN, 0};
         if (poll(&pfd, 1, 500) <= 0 || !(pfd.revents & POLLIN)) continue;
-        int fd = accept(sg_listen, NULL, NULL);
+        int fd = accept(listenFd, NULL, NULL);
         if (fd < 0) continue;
         serveClient(fd);
         close(fd);
@@ -88,12 +95,14 @@ static void startServer(void) {
     }
     sg_listen = fd;
     sg_serving = YES;
-    [NSThread detachNewThreadWithBlock:^{ acceptLoop(); }];
+    NSUInteger generation = ++sg_acceptGeneration;
+    [NSThread detachNewThreadWithBlock:^{ acceptLoop(generation, fd); }];
     SGLog(@"tv lyrics: serving at http://127.0.0.1:%d", SGTVLyricsPort);
 }
 
 static void stopServer(void) {
     if (!sg_serving) return;
+    sg_acceptGeneration++;
     sg_serving = NO;   // the loop notices within half a second and lets go
     close(sg_listen);
     sg_listen = -1;

@@ -16,7 +16,11 @@ static BOOL sg_platformReported = NO;
 
 void SGAddPlayerStateObserver(id<SGPlayerStateObserver> observer) {
     if (!observer) return;
-    if (!sg_stateObservers) sg_stateObservers = [NSHashTable weakObjectsHashTable];
+    // Created once (Batch 90): the bare check-then-create was safe only
+    // while every caller was a %ctor or the main queue, whatever the
+    // header's promise about adding from anywhere.
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ sg_stateObservers = [NSHashTable weakObjectsHashTable]; });
     [sg_stateObservers addObject:observer];
 }
 

@@ -11,15 +11,60 @@ static NSString *statsPath(void) {
 
 static NSMutableDictionary *sg_stats;
 
-static NSMutableDictionary *stats(void) {
-    if (sg_stats) return sg_stats;
-    NSData *data = [NSData dataWithContentsOfFile:statsPath()];
-    id parsed = data ? [NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingMutableContainers error:nil] : nil;
-    sg_stats = [parsed isKindOfClass:NSMutableDictionary.class] ? parsed : [NSMutableDictionary dictionary];
+// The store made safe to read (Batch 90): the file on disk and an
+// imported backup are both outside this build's control, and the
+// readers subscript the nested entries trusting their shapes — a
+// string where a number belongs (or an NSNull from a hand-edited JSON)
+// crashed the stats page. Every track and day entry is walked and its
+// known fields coerced; unknown keys are left alone for newer builds.
+static void normalizeStats(void) {
     if (![sg_stats[@"tracks"] isKindOfClass:NSMutableDictionary.class])
         sg_stats[@"tracks"] = [NSMutableDictionary dictionary];
     if (![sg_stats[@"totalSeconds"] isKindOfClass:NSNumber.class])
         sg_stats[@"totalSeconds"] = @0;
+    NSMutableDictionary *tracks = sg_stats[@"tracks"];
+    for (NSString *uri in [tracks allKeys]) {
+        id entry = tracks[uri];
+        if (![entry isKindOfClass:NSMutableDictionary.class]) {
+            tracks[uri] = [@{@"title": @"", @"artist": @"", @"plays": @0, @"seconds": @0} mutableCopy];
+            continue;
+        }
+        NSMutableDictionary *row = entry;
+        if (![row[@"title"] isKindOfClass:NSString.class]) row[@"title"] = @"";
+        if (![row[@"artist"] isKindOfClass:NSString.class]) row[@"artist"] = @"";
+        if (![row[@"plays"] isKindOfClass:NSNumber.class]) row[@"plays"] = @0;
+        if (![row[@"seconds"] isKindOfClass:NSNumber.class]) row[@"seconds"] = @0;
+        if (row[@"lastPlayed"] && ![row[@"lastPlayed"] isKindOfClass:NSNumber.class])
+            [row removeObjectForKey:@"lastPlayed"];
+    }
+    if (sg_stats[@"days"] && ![sg_stats[@"days"] isKindOfClass:NSMutableDictionary.class])
+        [sg_stats removeObjectForKey:@"days"];
+    NSMutableDictionary *days = sg_stats[@"days"];
+    for (NSString *day in [days allKeys]) {
+        id entry = days[day];
+        if (![entry isKindOfClass:NSMutableDictionary.class]) {
+            [days removeObjectForKey:day];
+            continue;
+        }
+        NSMutableDictionary *row = entry;
+        if (![row[@"plays"] isKindOfClass:NSNumber.class]) row[@"plays"] = @0;
+        if (![row[@"seconds"] isKindOfClass:NSNumber.class]) row[@"seconds"] = @0;
+    }
+}
+
+static NSMutableDictionary *stats(void) {
+    if (sg_stats) return sg_stats;
+    // Loaded once (Batch 90): the bare check-then-load raced any second
+    // thread that arrived first. An import or a clear that landed before
+    // the first read is already in sg_stats and is kept.
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        if (sg_stats) return;
+        NSData *data = [NSData dataWithContentsOfFile:statsPath()];
+        id parsed = data ? [NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingMutableContainers error:nil] : nil;
+        sg_stats = [parsed isKindOfClass:NSMutableDictionary.class] ? parsed : [NSMutableDictionary dictionary];
+        normalizeStats();
+    });
     return sg_stats;
 }
 
@@ -194,10 +239,7 @@ void SGStatsImport(NSDictionary *store) {
     id parsed = data ? [NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingMutableContainers error:nil] : nil;
     if (![parsed isKindOfClass:NSMutableDictionary.class]) return;
     sg_stats = parsed;
-    if (![sg_stats[@"tracks"] isKindOfClass:NSMutableDictionary.class])
-        sg_stats[@"tracks"] = [NSMutableDictionary dictionary];
-    if (![sg_stats[@"totalSeconds"] isKindOfClass:NSNumber.class])
-        sg_stats[@"totalSeconds"] = @0;
+    normalizeStats();
     save();
     SGLog(@"listening stats: imported");
 }

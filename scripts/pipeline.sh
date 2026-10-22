@@ -137,8 +137,10 @@ if [ -n "${EXT_DIR:-}" ] && unzip -l "$OUT" "$EXT_BIN" >/dev/null 2>&1; then
   PATCH="$(mktemp -d)"
   unzip -q "$OUT" "$EXT_BIN" -d "$PATCH"
   "$ROOT/scripts/insert-dylib.py" "$PATCH/$EXT_BIN" @rpath/SpotifyGlassAppGroups.dylib
-  ldid -e "$PATCH/$EXT_BIN" > "$PATCH/ents.plist"
-  ldid -S"$PATCH/ents.plist" "$PATCH/$EXT_BIN"
+  # No entitlements to preserve, unlike Spotify's widget above: the extension is
+  # built adhoc (codesign -s -, no entitlements), so ldid -e has nothing to hand
+  # back and -S<empty file> aborts. A plain fakesign restores its built state.
+  ldid -S "$PATCH/$EXT_BIN"
   OUT_ABS="$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")"
   (cd "$PATCH" && zip -q "$OUT_ABS" "$EXT_BIN")
   rm -rf "$PATCH"

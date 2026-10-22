@@ -11,6 +11,90 @@
 
 static char kKaraokeKey, kCoverKey, kCoverWrapKey, kTitleKey, kArtistKey, kQueueKey;
 
+#pragma mark - turning sideways
+
+// The split layout below only ever *answered* a wide page; nothing made
+// the page wide. Spotify is a portrait app — its orientation mask says
+// so — and turning the phone on the lyrics page changed nothing, which
+// is what "landscape lyrics doesn't work" meant on the device. So while
+// the lyrics page is on screen with the switch on, the mask is widened
+// for as long as the page stays: the app delegate's answer is replaced
+// (its original kept and called whenever the page is not up), every
+// view controller answers all-but-upside-down and may rotate, and the
+// scene is asked for landscape once. Closing the page asks for portrait
+// back. Rotating the phone while the page is up then moves between the
+// two layouts the ordinary way.
+static BOOL sg_orientationUnlocked;
+static IMP sg_delegateOrientations;
+
+static UIInterfaceOrientationMask sg_supportedOrientations(id self, SEL _cmd, UIApplication *app, UIWindow *window) {
+    if (sg_orientationUnlocked) return UIInterfaceOrientationMaskAllButUpsideDown;
+    if (sg_delegateOrientations) {
+        return ((UIInterfaceOrientationMask (*)(id, SEL, UIApplication *, UIWindow *))sg_delegateOrientations)(self, _cmd, app, window);
+    }
+    return UIInterfaceOrientationMaskPortrait;
+}
+
+static void sg_installOrientationHook(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        Class delegateClass = object_getClass(UIApplication.sharedApplication.delegate);
+        SEL sel = @selector(application:supportedInterfaceOrientationsForWindow:);
+        if (!delegateClass) return;
+        Method method = class_getInstanceMethod(delegateClass, sel);
+        if (method) {
+            sg_delegateOrientations = method_getImplementation(method);
+            method_setImplementation(method, (IMP)sg_supportedOrientations);
+        } else {
+            class_addMethod(delegateClass, sel, (IMP)sg_supportedOrientations, "Q@:@@");
+        }
+    });
+}
+
+static void sg_requestOrientation(UIInterfaceOrientationMask mask, UIWindow *window) {
+    UIWindowScene *scene = window.windowScene;
+    if (!scene) return;
+    UIWindowSceneGeometryPreferencesIOS *prefs =
+        [[UIWindowSceneGeometryPreferencesIOS alloc] initWithInterfaceOrientations:mask];
+    [scene requestGeometryUpdateWithPreferences:prefs errorHandler:^(NSError *error) {
+        SGLog(@"karaoke: the orientation request was refused (%@)", error.localizedDescription);
+    }];
+    [window.rootViewController setNeedsUpdateOfSupportedInterfaceOrientations];
+}
+
+static void sg_karaokeAppeared(UIView *host) {
+    if (!SGFlag(SGRKeyLandscapeLyrics, NO) || sg_orientationUnlocked) return;
+    sg_installOrientationHook();
+    sg_orientationUnlocked = YES;
+    sg_requestOrientation(UIInterfaceOrientationMaskLandscape, host.window);
+    SGLog(@"karaoke: landscape unlocked while the lyrics page is up");
+}
+
+static void sg_karaokeVanished(UIView *host) {
+    if (!sg_orientationUnlocked) return;
+    sg_orientationUnlocked = NO;
+    // Called from didMoveToWindow, where the host's own window is already
+    // gone; the portrait request goes to whatever window the scene has.
+    UIWindow *window = host.window;
+    if (!window) {
+        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+            if (![scene isKindOfClass:UIWindowScene.class]) continue;
+            window = ((UIWindowScene *)scene).windows.firstObject;
+            if (window) break;
+        }
+    }
+    sg_requestOrientation(UIInterfaceOrientationMaskPortrait, window);
+}
+
+%hook UIViewController
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations {
+    return sg_orientationUnlocked ? UIInterfaceOrientationMaskAllButUpsideDown : %orig;
+}
+- (BOOL)shouldAutorotate {
+    return sg_orientationUnlocked ? YES : %orig;
+}
+%end
+
 static UILabel *coverLabel(char *key, UIView *host, UIFont *font, UIColor *color) {
     UILabel *label = objc_getAssociatedObject(host, key);
     if (!label) {
@@ -26,9 +110,17 @@ static UILabel *coverLabel(char *key, UIView *host, UIFont *font, UIColor *color
 }
 
 %hook _TtC32Lyrics_FullscreenElementPageImpl10LyricsView
+- (void)didMoveToWindow {
+    %orig;
+    if (self.window) sg_karaokeAppeared((UIView *)self);
+    else sg_karaokeVanished((UIView *)self);
+}
+
 - (void)layoutSubviews {
     %orig;
     UIView *host = (UIView *)self;
+    // The switch turned off again while the page is up: hand portrait back.
+    if (sg_orientationUnlocked && !SGFlag(SGRKeyLandscapeLyrics, NO)) sg_karaokeVanished(host);
     SGRKaraokeView *view = objc_getAssociatedObject(host, &kKaraokeKey);
     if (!view) {
         SGLog(@"karaoke: page opened, playing %@", SGKaraokePlayingTrack());

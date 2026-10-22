@@ -21,7 +21,12 @@ SGModRow *SGAppTintRow(void) {
     return row;
 }
 
-// One control, tinted if a colour is going.
+// One control, tinted if a colour is going. The bars are here too: a tab
+// bar or navigation bar holds colours it was handed when it was built, and
+// nothing in UIKit re-reads them — left to itself the bar kept the old
+// accent until a page change happened to rebuild it. A tab bar of the
+// mod's own (the redesign's glass bar reads SGRAccent() as it lays out) is
+// also told to lay out again, which is the pass that re-reads it.
 static void tintControl(UIView *view, UIColor *color) {
     if ([view isKindOfClass:UISwitch.class]) {
         ((UISwitch *)view).onTintColor = color;
@@ -31,6 +36,13 @@ static void tintControl(UIView *view, UIColor *color) {
         ((UISegmentedControl *)view).selectedSegmentTintColor = color;
     } else if ([view isKindOfClass:UIProgressView.class]) {
         ((UIProgressView *)view).progressTintColor = color;
+    } else if ([view isKindOfClass:UITabBar.class]) {
+        ((UITabBar *)view).tintColor = color;
+        [view setNeedsLayout];
+    } else if ([view isKindOfClass:UINavigationBar.class]) {
+        ((UINavigationBar *)view).tintColor = color;
+    } else if ([NSStringFromClass(view.class) containsString:@"TabBar"]) {
+        [view setNeedsLayout];
     }
 }
 
@@ -116,6 +128,23 @@ static void refreshTint(void) {
                                                       object:nil
                                                        queue:NSOperationQueue.mainQueue
                                                   usingBlock:^(NSNotification *note) { refreshTintSoon(); }];
+    // A picked accent is a defaults write, and until now nothing listened
+    // for one: the tint only moved when the next song's palette landed, so
+    // a new accent reached the screen piecemeal — a control as it was drawn
+    // again, the bar not until a page change. The note itself does not say
+    // what changed, and the mod writes defaults often, so the colour is
+    // compared and only a real change refreshes.
+    static UIColor *lastTint;
+    lastTint = SGAppTintColor();
+    [NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification
+                                                      object:nil
+                                                       queue:NSOperationQueue.mainQueue
+                                                  usingBlock:^(NSNotification *note) {
+        UIColor *now = SGAppTintColor();
+        if (!now || [now isEqual:lastTint]) return;
+        lastTint = now;
+        refreshTintSoon();
+    }];
     dispatch_async(dispatch_get_main_queue(), ^{ refreshTint(); });
     SGLog(@"app tint: on");
 }

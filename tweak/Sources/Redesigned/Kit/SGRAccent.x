@@ -192,4 +192,14 @@ static id swappedValue(id value) {
                          queue:NSOperationQueue.mainQueue
                     usingBlock:^(NSNotification *note) { sg_accent = chosen(); }];
     }
+    // A colour picked while the app runs: the swap reads sg_accent at the
+    // moment a green is born, so following the pick here is all it takes
+    // for greens drawn from then on to come out in the new colour.
+    [NSNotificationCenter.defaultCenter
+        addObserverForName:NSUserDefaultsDidChangeNotification object:nil
+                     queue:NSOperationQueue.mainQueue
+                usingBlock:^(NSNotification *note) {
+        NSInteger now = chosen();
+        if (now != sg_accent) sg_accent = now;
+    }];
 }

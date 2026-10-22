@@ -172,10 +172,19 @@ static void layoutTitle(UIView *header, UIView *spotifyTitle, CGFloat leading, C
 
 #pragma mark - the two headers
 
-static BOOL isFace(UIView *view) {
-    static Class faceClass;
+// The avatar, told three ways, because which one it is depends on the
+// build: the container class the 9.1.78 tree names, the current-user face
+// view the 9.1.90 binary carries beside it, and — the one that does not
+// move between builds — the identifier both answer to,
+// Components.UI.SideDrawerButton. On the device the class alone missed
+// it: the face stood at the leading edge under the title, fully drawn.
+static BOOL isAvatarView(UIView *view) {
+    static Class faceClass, userFaceClass;
     if (!faceClass) faceClass = NSClassFromString(@"_TtC29ListeningActivity_ElementsKit21AdaptiveFaceContainer");
-    return faceClass && [view isKindOfClass:faceClass];
+    if (!userFaceClass) userFaceClass = NSClassFromString(@"_TtC29ListeningActivity_ElementsKit18ActiveUserFaceView");
+    if (faceClass && [view isKindOfClass:faceClass]) return YES;
+    if (userFaceClass && [view isKindOfClass:userFaceClass]) return YES;
+    return [view.accessibilityIdentifier isEqualToString:@"Components.UI.SideDrawerButton"];
 }
 
 // The root header's controls at its trailing edge and the title before them. Answers what it
@@ -191,11 +200,9 @@ static NSArray<UIView *> *placeRoot(UIView *header) {
     NSMutableArray<UIView *> *trailing = controlsIn(header, @[
         @"YourLibraryHeader.recents", @"YourLibraryHeader.search", @"YourLibraryHeader.plus",
     ], keys);
-    __block UIView *face = nil;
     SGForEachView(header, ^(UIView *view) {
-        if (!face && isFace(view) && view.bounds.size.width > 1) face = view;
+        if (isAvatarView(view)) vanish(view);
     });
-    vanish(face);
     if (!trailing.count) return trailing;
 
     CGFloat leading = placeTrailing(header, trailing);
@@ -293,6 +300,19 @@ static void vanishFaceInLibrary(UIView *face) {
 }
 %end
 
+// The same watch on the current-user face view, the other shape the
+// header's avatar takes (see isAvatarView).
+%hook _TtC29ListeningActivity_ElementsKit18ActiveUserFaceView
+- (void)layoutSubviews {
+    %orig;
+    vanishFaceInLibrary((UIView *)self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    vanishFaceInLibrary((UIView *)self);
+}
+%end
+
 %hook _TtC28YourLibrary_YourLibraryXImpl15YourLibraryView
 - (void)layoutSubviews {
     %orig;
@@ -315,5 +335,6 @@ static void vanishFaceInLibrary(UIView *face) {
         @"_TtC22YourLibrary_FolderImpl10FolderView",
         @"_TtC21YourLibrary_CommonKit35YourLibraryHeaderContentFiltersView",
         @"_TtC29ListeningActivity_ElementsKit21AdaptiveFaceContainer",
+        @"_TtC29ListeningActivity_ElementsKit18ActiveUserFaceView",
     ]);
 }

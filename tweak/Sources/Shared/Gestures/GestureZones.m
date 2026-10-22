@@ -5,7 +5,7 @@
 NSArray<NSString *> *SGGestureActionNames(void) {
     return @[@"Nothing", @"Seek back", @"Seek forward", @"Play or pause", @"Next track",
              @"Previous track", @"Shuffle", @"Repeat", @"Speed up", @"Speed down", @"Sleep timer: 30 minutes", @"Sleep timer: end of track",
-             @"A-B repeat: set point A", @"A-B repeat: set point B", @"A-B repeat: clear the loop", @"Copy lyric card", @"Bookmark this moment", @"Go to the bookmark", @"Copy link to this track", @"Sleep timer: add 15 minutes", @"Copy lyrics", @"Open the artist", @"Sleep timer: off", @"Sleep timer: 15 minutes"];
+             @"A-B repeat: set point A", @"A-B repeat: set point B", @"A-B repeat: clear the loop", @"Copy lyric card", @"Bookmark this moment", @"Go to the bookmark", @"Copy link to this track", @"Sleep timer: add 15 minutes", @"Copy lyrics", @"Open the artist", @"Sleep timer: off", @"Sleep timer: 15 minutes", @"Rate this track: +1 star"];
 }
 
 NSArray<NSString *> *SGGestureSplitNames(void) {

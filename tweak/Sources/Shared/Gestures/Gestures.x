@@ -10,6 +10,7 @@
 #import "Shared/Player/SleepTimer.h"
 #import "Shared/Player/ABRepeat.h"
 #import "Shared/Player/Bookmark.h"
+#import "Shared/Player/Ratings.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Navigation/Links.h"
@@ -122,6 +123,9 @@ static void perform(SGGestureAction action) {
             }
             break;
         }
+        case SGGestureRateUp:
+            SGRateUpCurrent();
+            break;
     }
 }
 

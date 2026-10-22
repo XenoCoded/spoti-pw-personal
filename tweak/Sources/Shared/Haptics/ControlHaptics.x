@@ -244,6 +244,7 @@ static void gesturePerformed(SGGestureAction action) {
         case SGGestureExtendSleep: SGPlayFeedback(SGFeedbackAdd); break;
         case SGGestureCopyLyrics: SGPlayFeedback(SGFeedbackAdd); break;
         case SGGestureOpenArtist: SGPlayFeedback(SGFeedbackToggle); break;
+        case SGGestureRateUp: SGPlayFeedback(SGFeedbackDetent); break;
     }
 }
 

@@ -5,6 +5,7 @@
 #import "Settings/SGPageStyle.h"
 #import "ListeningStats.h"
 #import "ChartCard.h"
+#import "Shared/Player/Ratings.h"
 #import "Shared/Navigation/Links.h"
 
 static void confirmClear(void) {
@@ -234,6 +235,40 @@ UIViewController *SGListeningStatsPage(void) {
                 })];
             }
             [sections addObject:SGSection(@"Top artists", rows)];
+        }
+        // Hall of Fame (Batch 58): the tracks the user gave four or five
+        // stars, best first. The titles live here in the stats store; a
+        // rated track the stats have never counted has no name to show
+        // and joins once it has been played with stats on.
+        NSDictionary<NSString *, NSNumber *> *ratings = SGAllRatings();
+        NSMutableArray<NSDictionary *> *fame = [NSMutableArray array];
+        for (NSString *uri in ratings) {
+            NSInteger stars = [ratings[uri] integerValue];
+            NSDictionary *stored = tracks[uri];
+            if (stars >= 4 && stored) {
+                NSMutableDictionary *entry = [stored mutableCopy];
+                entry[@"uri"] = uri;
+                entry[@"stars"] = @(stars);
+                [fame addObject:entry];
+            }
+        }
+        [fame sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+            NSComparisonResult byStars = [b[@"stars"] compare:a[@"stars"]];
+            return byStars != NSOrderedSame ? byStars : [b[@"seconds"] compare:a[@"seconds"]];
+        }];
+        if (fame.count) {
+            NSMutableArray<SGModRow *> *rows = [NSMutableArray array];
+            for (NSDictionary *entry in fame) {
+                NSString *title = [entry[@"title"] length] ? entry[@"title"] : @"Unknown track";
+                NSString *detail = [NSString stringWithFormat:@"%@ · %@ · %@ plays",
+                    SGStarsString([entry[@"stars"] integerValue]),
+                    SGStatsFormatTime([entry[@"seconds"] doubleValue]), entry[@"plays"]];
+                NSString *uri = entry[@"uri"];
+                [rows addObject:SGStatActionRow(title, entry[@"artist"], ^NSString *{ return detail; }, ^{
+                    if (uri.length) SGOpenSpotifyURI([NSURL URLWithString:uri]);
+                })];
+            }
+            [sections addObject:SGSection(@"Hall of Fame", rows)];
         }
         // The same report as text (Batch 28): the tops this phone knows,
         // ready to paste anywhere. The snapshot is captured with the rows

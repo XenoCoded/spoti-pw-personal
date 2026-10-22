@@ -38,6 +38,7 @@ typedef NS_ENUM(NSInteger, SGGestureAction) {
     SGGestureOpenArtist,
     SGGestureSleepOff,
     SGGestureSleep15,
+    SGGestureRateUp,
 };
 
 NSArray<NSString *> *SGGestureActionNames(void);

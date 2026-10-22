@@ -312,6 +312,47 @@ UIViewController *SGListeningStatsPage(void) {
             }
             if (rows.count) [sections addObject:SGSection(@"Listening clock", rows)];
         }
+        // Listening sessions (Batch 70): the journal grouped the way a
+        // person remembers it — a sitting. Twenty quiet minutes end one;
+        // the next play starts another. Heard time is the entries' own
+        // seconds summed, so a session of skips reads short, as it was.
+        if (journal.count >= 3) {
+            NSMutableArray<NSDictionary *> *sessions = [NSMutableArray array];
+            double sessionStart = 0, lastEnd = 0, heard = 0;
+            NSInteger songs = 0;
+            for (NSDictionary *play in [journal reverseObjectEnumerator]) {
+                double started = [play[@"t"] doubleValue];
+                double seconds = [play[@"seconds"] doubleValue];
+                if (songs && started - lastEnd > 20 * 60) {
+                    [sessions addObject:@{@"start": @(sessionStart), @"end": @(lastEnd),
+                                          @"songs": @(songs), @"heard": @(heard)}];
+                    songs = 0;
+                    heard = 0;
+                }
+                if (!songs) sessionStart = started;
+                songs++;
+                heard += seconds;
+                lastEnd = started + seconds;
+            }
+            if (songs) [sessions addObject:@{@"start": @(sessionStart), @"end": @(lastEnd),
+                                             @"songs": @(songs), @"heard": @(heard)}];
+            NSDateFormatter *timeOnly = [NSDateFormatter new];
+            timeOnly.dateFormat = @"h:mm a";
+            NSMutableArray<SGModRow *> *rows = [NSMutableArray array];
+            for (NSDictionary *session in [sessions reverseObjectEnumerator]) {
+                if (rows.count == 5) break;
+                NSDate *start = [NSDate dateWithTimeIntervalSince1970:[session[@"start"] doubleValue]];
+                NSDate *end = [NSDate dateWithTimeIntervalSince1970:[session[@"end"] doubleValue]];
+                NSString *day = [NSCalendar.currentCalendar isDateInToday:start]
+                    ? @"Today" : [dayOnly stringFromDate:start];
+                NSString *title = [NSString stringWithFormat:@"%@, %@ – %@", day,
+                    [timeOnly stringFromDate:start], [timeOnly stringFromDate:end]];
+                NSString *detail = [NSString stringWithFormat:@"%@ songs · %@ heard",
+                    session[@"songs"], SGStatsFormatTime([session[@"heard"] doubleValue])];
+                [rows addObject:SGStatRow(title, ^NSString *{ return detail; })];
+            }
+            if (rows.count > 1) [sections addObject:SGSection(@"Listening sessions", rows)];
+        }
         NSArray<NSDictionary *> *songs = topTracks(snapshot, 10);
         if (songs.count) {
             NSMutableArray<SGModRow *> *rows = [NSMutableArray array];
@@ -339,6 +380,52 @@ UIViewController *SGListeningStatsPage(void) {
                 })];
             }
             [sections addObject:SGSection(@"Top artists", rows)];
+        }
+        // Current obsessions (Batch 70): what is actually on repeat right
+        // now — plays counted from the journal over the last seven days,
+        // not all-time seconds. Three plays in the week earns a place;
+        // the top five show, most-played first. The journal is newest
+        // first, so the walk stops at the week's edge. The ranked list
+        // is kept for the text export below.
+        NSArray<NSDictionary *> *obsessions = nil;
+        {
+            NSTimeInterval weekAgo = NSDate.date.timeIntervalSince1970 - 7 * 86400;
+            NSMutableDictionary<NSString *, NSMutableDictionary *> *weekPlays = [NSMutableDictionary dictionary];
+            for (NSDictionary *play in journal) {
+                if ([play[@"t"] doubleValue] < weekAgo) break;
+                NSString *uri = play[@"uri"];
+                if (!uri.length) continue;
+                NSMutableDictionary *entry = weekPlays[uri];
+                if (!entry) {
+                    entry = [@{@"uri": uri,
+                               @"title": play[@"title"] ?: @"",
+                               @"artist": play[@"artist"] ?: @"",
+                               @"count": @0} mutableCopy];
+                    weekPlays[uri] = entry;
+                }
+                entry[@"count"] = @([entry[@"count"] integerValue] + 1);
+            }
+            NSArray<NSDictionary *> *ranked = [weekPlays.allValues sortedArrayUsingComparator:
+                ^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+                    return [b[@"count"] compare:a[@"count"]];
+                }];
+            NSMutableArray<NSDictionary *> *kept = [NSMutableArray array];
+            for (NSDictionary *entry in ranked) {
+                if (kept.count == 5) break;
+                if ([entry[@"count"] integerValue] < 3) break;
+                [kept addObject:entry];
+            }
+            obsessions = kept;
+            NSMutableArray<SGModRow *> *rows = [NSMutableArray array];
+            for (NSDictionary *entry in kept) {
+                NSString *title = [entry[@"title"] length] ? entry[@"title"] : @"Unknown track";
+                NSString *detail = [NSString stringWithFormat:@"%@ plays this week", entry[@"count"]];
+                NSString *uri = entry[@"uri"];
+                [rows addObject:SGStatActionRow(title, entry[@"artist"], ^NSString *{ return detail; }, ^{
+                    if (uri.length) SGOpenSpotifyURI([NSURL URLWithString:uri]);
+                })];
+            }
+            if (rows.count) [sections addObject:SGSection(@"On repeat this week", rows)];
         }
         // Hall of Fame (Batch 58): the tracks the user gave four or five
         // stars, best first. The titles live here in the stats store; a
@@ -401,6 +488,14 @@ UIViewController *SGListeningStatsPage(void) {
             for (NSDictionary *artist in artists) {
                 [lines addObject:[NSString stringWithFormat:@"· %@ (%@)",
                     artist[@"name"], SGStatsFormatTime([artist[@"seconds"] doubleValue])]];
+            }
+            if (obsessions.count) {
+                [lines addObject:@""];
+                [lines addObject:@"On repeat this week"];
+                for (NSDictionary *entry in obsessions) {
+                    NSString *title = [entry[@"title"] length] ? entry[@"title"] : @"Unknown track";
+                    [lines addObject:[NSString stringWithFormat:@"· %@ (%@ plays)", title, entry[@"count"]]];
+                }
             }
             if (recent.count) {
                 [lines addObject:@""];

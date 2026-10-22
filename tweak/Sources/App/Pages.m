@@ -14,6 +14,7 @@
 #import "Shared/Player/HeadGestures.h"
 #import "Shared/Player/ABRepeat.h"
 #import "Shared/Player/Bookmark.h"
+#import "Shared/Player/ScanMode.h"
 #import "Shared/Player/Ratings.h"
 #import "Native/Appearance/Appearance.h"
 #import "Native/Navbar/Navbar.h"
@@ -141,6 +142,7 @@ UIViewController *SGPlayerSettingsPage(void) {
     // Vibrations hook Spotify's own controls and its audio, so they answer under either look.
     [sections addObjectsFromArray:SGVibrationsSections()];
     [sections addObject:SGSection(@"Sleep", SGSleepTimerRows())];
+    [sections addObject:SGSection(@"Scan mode", SGScanModeRows())];
     [sections addObject:SGSection(@"Head gestures", SGHeadGestureRows())];
     [sections addObject:SGSection(@"Repeat", SGABRepeatRows())];
     [sections addObject:SGSection(@"Rating", SGRatingsRows())];

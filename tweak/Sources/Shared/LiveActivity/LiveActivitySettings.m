@@ -17,7 +17,12 @@ NSArray<SGModRow *> *SGLiveActivityRows(void) {
                                  SGKeyLiveActivityIdleEnd,
                                  @[@"End after 5 minutes", @"End after 1 minute", @"Keep showing"],
                                  SGLiveActivityIdleEnd5Min);
-    return @[on, view, idle];
+    // The lyrics view's manners (Batch 59): whether the next line rides
+    // under the current one, and whether a long break counts down to it.
+    SGModRow *lines = SGChoiceRow(@"Lines", nil, SGKeyLiveActivityLines,
+                                  @[@"Current + next", @"Current only"], 0);
+    SGModRow *interlude = SGSwitchRow(@"Interlude countdown", @"During a long break between lines, the card counts down to the next line instead of sitting on a note.", SGKeyLiveActivityInterlude);
+    return @[on, view, idle, lines, interlude];
 }
 
 UIViewController *SGLiveActivitySettingsPage(void) {

@@ -28,6 +28,12 @@
 #define SGKeyLiveActivityView @"spotifyglass.liveActivity.view"
 // What happens while nothing plays, SGLiveActivityIdleEnd's values.
 #define SGKeyLiveActivityIdleEnd @"spotifyglass.liveActivity.idleEnd"
+// Whether the lyrics view sends the next line with the current one
+// (Batch 59): 0 current + next, 1 current only.
+#define SGKeyLiveActivityLines @"spotifyglass.liveActivity.lines"
+// Whether a long break between lines counts down to the next one on the
+// card (Batch 59), on until switched off.
+#define SGKeyLiveActivityInterlude @"spotifyglass.liveActivity.interlude"
 // What the keys were called while this was the redesign's alone; LiveActivity.x's %ctor moves them over.
 #define SGKeyLiveActivityWas @"spotifyglass.redesign.liveActivity"
 #define SGKeyLiveActivityViewWas @"spotifyglass.redesign.liveActivity.view"

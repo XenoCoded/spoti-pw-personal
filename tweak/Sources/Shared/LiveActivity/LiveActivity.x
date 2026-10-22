@@ -117,6 +117,17 @@ static NSInteger repeatModeOf(SPTPlayerOptions *options) {
     return options.repeatingTrack ? 2 : options.repeatingContext ? 1 : 0;
 }
 
+// "♪ Interlude 1:05" for the wait until a line starts, or nil when the wait
+// is short enough that the plain note reads better. The seconds are stepped
+// down to a multiple of five: the text rides in the shown fingerprint, so a
+// finer count would re-send the card every second of the break.
+static NSString *interludeText(NSInteger startMs, NSInteger positionMs) {
+    NSInteger remaining = startMs - positionMs;
+    if (remaining < 8000) return nil;
+    NSInteger seconds = (remaining / 1000 / 5) * 5;
+    return [NSString stringWithFormat:@"♪ Interlude %ld:%02ld", (long)(seconds / 60), (long)(seconds % 60)];
+}
+
 // The line being sung and the one after it; before the first line, between lines and without lyrics
 // at all, a note holds the place.
 static NSString *lyricsLine(NSString *trackID, NSString **next) {
@@ -134,10 +145,29 @@ static NSString *lyricsLine(NSString *trackID, NSString **next) {
     // With two voices at once, the one that came in first, and the one singing over it as the next.
     NSInteger index = SGKaraokeLeadLine(lines, position);
     *next = index + 1 < (NSInteger)lines.count ? SGKaraokeLineText(lines[index + 1]) : @"";
-    if (index < 0) return @"♪";
+    // The interlude (Batch 59): a long stretch with nothing sung — the
+    // intro before the first line, a breakdown between two — counts down
+    // to the line it is waiting for, in five-second steps so the card is
+    // not re-sent every second of it. Under eight seconds to go the note
+    // alone reads better; the line is about to land.
+    BOOL interlude = SGFlag(SGKeyLiveActivityInterlude, YES);
+    if (index < 0) {
+        if (interlude && lines.count) {
+            NSString *count = interludeText(lines[0].start, position);
+            if (count) return count;
+        }
+        return @"♪";
+    }
     SGKaraokeLine *current = lines[index];
     BOOL nextFarOff = index + 1 == (NSInteger)lines.count || lines[index + 1].start - position > kBreakMs;
-    return position > current.end + kBreakMs && nextFarOff ? @"♪" : SGKaraokeLineText(current);
+    if (position > current.end + kBreakMs && nextFarOff) {
+        if (interlude && index + 1 < (NSInteger)lines.count) {
+            NSString *count = interludeText(lines[index + 1].start, position);
+            if (count) return count;
+        }
+        return @"♪";
+    }
+    return SGKaraokeLineText(current);
 }
 
 static void clearSleepTimer(void) {
@@ -206,7 +236,12 @@ static void tick(void) API_AVAILABLE(ios(17.0)) {
     NSTimeInterval every = paused ? kPausedTick : kTick;
     if (sg_timer && sg_tickEvery != every) startTimer(every);
     NSString *line = @"", *next = @"";
-    if (view == SGLiveActivityLyrics) line = lyricsLine(trackID, &next);
+    if (view == SGLiveActivityLyrics) {
+        line = lyricsLine(trackID, &next);
+        // Current line only (Batch 59): the widget already leaves an empty
+        // next line undrawn, so the choice is kept here, in what is sent.
+        if (SGInt(SGKeyLiveActivityLines, 0) == 1) next = @"";
+    }
 
     NSMutableArray<NSString *> *titles = [NSMutableArray array], *artists = [NSMutableArray array], *uris = [NSMutableArray array];
     if (view != SGLiveActivityLyrics) {

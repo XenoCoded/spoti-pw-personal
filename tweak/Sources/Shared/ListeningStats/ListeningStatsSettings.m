@@ -4,6 +4,7 @@
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
 #import "ListeningStats.h"
+#import "ChartCard.h"
 #import "Shared/Navigation/Links.h"
 
 static void confirmClear(void) {
@@ -282,9 +283,15 @@ UIViewController *SGListeningStatsPage(void) {
             }
             UIPasteboard.generalPasteboard.string = [lines componentsJoinedByString:@"\n"];
         });
+        // The same numbers as a picture (Batch 57): the chart card is the
+        // shareable form of this page, copied like the lyric card is.
+        SGModRow *chart = SGStatActionRow(@"Copy chart card", nil, ^NSString *{ return @"Image"; }, ^{
+            UIImage *image = SGChartCardImage();
+            if (image) UIPasteboard.generalPasteboard.image = image;
+        });
         SGModRow *clear = SGActionRow(@"Clear listening stats", nil, ^{ confirmClear(); });
         clear.color = SGRed();
-        [sections addObject:SGSection(nil, @[export, clear])];
+        [sections addObject:SGSection(nil, @[chart, export, clear])];
     }
     return [[SGModPage alloc] initWithTitle:@"Listening stats" intro:SGRestartNote sections:sections footer:nil];
 }

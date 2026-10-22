@@ -6,6 +6,7 @@
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "PlayerSettings.h"
+#import "Shared/QueueVault/QueueVault.h"
 #import "Shared/LiveActivity/LiveActivity.h"
 #import "Shared/LockScreenArtwork/LockScreenArtwork.h"
 #import "Shared/LyricArtwork/LyricArtwork.h"
@@ -142,7 +143,12 @@ NSArray<SGModRow *> *SGQueueShareRows(void) {
             UIPasteboard.generalPasteboard.string = [title stringByAppendingString:artist];
         });
     name.visible = link.visible;
-    return @[history, link, name, SGStatActionRow(@"Copy the queue as text",
+    SGModRow *vault = SGPageRow(@"Queue vault", ^UIViewController *{ return SGQueueVaultPage(); });
+    vault.value = ^NSString *{
+        NSUInteger count = SGQueueSnapshots().count;
+        return count ? [NSString stringWithFormat:@"%lu saved", (unsigned long)count] : @"Empty";
+    };
+    return @[SGWithSymbol(vault, @"archivebox"), history, link, name, SGStatActionRow(@"Copy the queue as text",
         @"The playing song and what's up next, one a line, ready to paste anywhere.",
         ^NSString *{
             return NSDate.date.timeIntervalSince1970 - sg_copiedAt < 2.5 ? @"Copied ✓" : @"Copy";

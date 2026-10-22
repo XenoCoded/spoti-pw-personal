@@ -200,35 +200,55 @@ static UILabel *wordLabel(NSString *text, UIFont *font, UIColor *color, CGRect f
 // landing. x = 5 at the end of the word is 96 % of the way there. The spring's progress drives
 // whichever style the Lyrics page chose (Batch 61): float rides it as a rise, grow as a held
 // swell, pop adds a bump of overshoot early in the word on top of a smaller hold, and glow
-// blooms the highlight behind the word. The rise is monotonic in x, so an unchanged rise means
-// an unchanged frame and the word is left alone.
+// blooms the highlight behind the word.
+//
+// The emphasis belongs to the word being sung and to no other: it used to
+// be driven by the rise alone, which climbs to one and stays there, so
+// every word already sung kept its swell, its halo and its lift for the
+// rest of the line. Past the word's own end the emphasis now lets go over
+// kEmphasisReleaseMs, and a word fully let go is settled and left alone.
 - (void)floatAt:(double)ms {
+    static const double kEmphasisReleaseMs = 220;
+    if (ms > _riseEnd + kEmphasisReleaseMs) {
+        if (_emphasisValue != 0) [self settle];
+        return;
+    }
     double x = MAX(0, ms - _riseStart + kFloatLeadMs) / MAX(_riseEnd - _riseStart, kFloatMinMs) * 5;
     CGFloat rise = (CGFloat)(1 - (1 + x) * exp(-x));
-    if (rise == _emphasisValue) return;
-    _emphasisValue = rise;
+    CGFloat release = ms > _riseEnd ? (CGFloat)(1 - (ms - _riseEnd) / kEmphasisReleaseMs) : 1;
+    CGFloat held = rise * release;
     switch (_emphasis) {
         case 1: {
-            CGFloat scale = 1 + kGrowPeak * rise * _strength;
+            CGFloat scale = 1 + kGrowPeak * held * _strength;
+            if (scale == _emphasisValue) return;
+            _emphasisValue = scale;
             self.transform = CGAffineTransformMakeScale(scale, scale);
             break;
         }
         case 2: {
             double bump = exp(-(x - 1.1) * (x - 1.1) / 0.6);
-            CGFloat scale = 1 + (CGFloat)(kPopHold * rise + kPopBump * bump) * _strength;
+            CGFloat scale = 1 + (CGFloat)(kPopHold * rise + kPopBump * bump) * release * _strength;
+            if (scale == _emphasisValue) return;
+            _emphasisValue = scale;
             self.transform = CGAffineTransformMakeScale(scale, scale);
             break;
         }
         case 3: {
+            CGFloat alpha = MIN(kGlowAlpha * _strength * held, 0.6);
+            if (alpha == _emphasisValue) return;
+            _emphasisValue = alpha;
             [CATransaction begin];
             [CATransaction setDisableActions:YES];
-            _halo.alpha = MIN(kGlowAlpha * _strength * rise, 0.6);
+            _halo.alpha = alpha;
             [CATransaction commit];
             break;
         }
-        default:
-            self.transform = CGAffineTransformMakeTranslation(0, -kLift * rise * _strength);
+        default: {
+            if (held == _emphasisValue) return;
+            _emphasisValue = held;
+            self.transform = CGAffineTransformMakeTranslation(0, -kLift * held * _strength);
             break;
+        }
     }
 }
 

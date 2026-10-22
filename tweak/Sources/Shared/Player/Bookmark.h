@@ -13,3 +13,6 @@ void SGBookmarkGo(void);
 
 #define SGKeyBookmarks @"spotifyglass.bookmarks"
 #define SGKeyIntros @"spotifyglass.intros"
+// Whether a track with a bookmark jumps to it when it starts (Batch 71),
+// off until switched on.
+#define SGKeyBookmarkAutoResume @"spotifyglass.bookmarks.autoResume"

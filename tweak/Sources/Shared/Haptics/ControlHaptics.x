@@ -246,6 +246,8 @@ static void gesturePerformed(SGGestureAction action) {
         case SGGestureOpenArtist: SGPlayFeedback(SGFeedbackToggle); break;
         case SGGestureRateUp: SGPlayFeedback(SGFeedbackDetent); break;
         case SGGestureBinTrack: SGPlayFeedback(SGFeedbackAdd); break;
+        case SGGestureCopyChart: SGPlayFeedback(SGFeedbackAdd); break;
+        case SGGestureCopyHeatmap: SGPlayFeedback(SGFeedbackAdd); break;
     }
 }
 

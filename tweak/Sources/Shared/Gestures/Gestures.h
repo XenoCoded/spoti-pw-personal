@@ -42,6 +42,10 @@ typedef NS_ENUM(NSInteger, SGGestureAction) {
     // The trash bin on a tap (Batch 78): "not interested" from anywhere
     // the grid reaches, without opening the player page.
     SGGestureBinTrack,
+    // The stat cards on a tap (Batch 84): the palette already copies
+    // them, and the grid is the faster hand.
+    SGGestureCopyChart,
+    SGGestureCopyHeatmap,
 };
 
 NSArray<NSString *> *SGGestureActionNames(void);

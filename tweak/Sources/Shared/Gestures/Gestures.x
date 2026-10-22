@@ -16,6 +16,8 @@
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Navigation/Links.h"
 #import "Shared/LyricArtwork/LyricArtwork.h"
+#import "Shared/ListeningStats/ChartCard.h"
+#import "Shared/ListeningStats/HeatmapCard.h"
 #import "Shared/Player/SpeedPitch.h"
 
 static __weak SPTNowPlayingPlaybackControllerImplementation *sg_player;
@@ -127,6 +129,16 @@ static void perform(SGGestureAction action) {
         case SGGestureRateUp:
             SGRateUpCurrent();
             break;
+        case SGGestureCopyChart: {
+            UIImage *image = SGChartCardImage();
+            if (image) UIPasteboard.generalPasteboard.image = image;
+            break;
+        }
+        case SGGestureCopyHeatmap: {
+            UIImage *image = SGHeatmapCardImage();
+            if (image) UIPasteboard.generalPasteboard.image = image;
+            break;
+        }
         case SGGestureBinTrack: {
             // Bin it, and if the bin is on, end it now too — the same
             // skip the bin's own watcher would do a track change from

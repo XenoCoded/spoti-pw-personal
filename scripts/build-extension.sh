@@ -16,6 +16,7 @@ NAME=SpotifyGlassLiveActivity
 APPEX="$OUT/$NAME.appex"
 SHARED="$ROOT/tweak/Sources/Shared/LiveActivity/LiveActivityShared.swift"
 WIDGET="$ROOT/extension/LiveActivity/LiveActivityWidget.swift"
+HOMEWIDGETS="$ROOT/extension/LiveActivity/HomeWidgets.swift"
 
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 TOOLCHAIN="$(dirname "$(dirname "$(dirname "$(xcrun --find swiftc)")")")"
@@ -46,8 +47,8 @@ metadata() {
 
 echo "==> building $NAME.appex"
 xcrun --sdk iphoneos swiftc -O -wmo -parse-as-library -target arm64-apple-ios17.0 -module-name "$NAME" \
-  -Xlinker -e -Xlinker _NSExtensionMain -o "$APPEX/$NAME" "$SHARED" "$WIDGET"
-metadata "$NAME" 17.0 "$APPEX" "$SHARED" "$WIDGET"
+  -Xlinker -e -Xlinker _NSExtensionMain -o "$APPEX/$NAME" "$SHARED" "$WIDGET" "$HOMEWIDGETS"
+metadata "$NAME" 17.0 "$APPEX" "$SHARED" "$WIDGET" "$HOMEWIDGETS"
 
 sed -e "s/HOST_BUNDLE_ID/$(plutil -extract CFBundleIdentifier raw -o - "$HOST_PLIST")/" \
     -e "s/HOST_SHORT_VERSION/$(plutil -extract CFBundleShortVersionString raw -o - "$HOST_PLIST")/" \

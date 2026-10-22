@@ -127,6 +127,25 @@ else
   echo "    no WidgetExtension.appex in this IPA"
 fi
 
+# The mod's own widgets (extension/LiveActivity/HomeWidgets.swift) read the same suites, so
+# the mod's extension gets the shim too, the same way: the tweak writes now playing and the
+# day's stats into group.com.spotify.client.widget.data, and the widget reads them back out
+# of the folder both processes are redirected to.
+echo "==> loading the App Group shim in the mod's widget extension"
+EXT_BIN="${APP_DIR}PlugIns/SpotifyGlassLiveActivity.appex/SpotifyGlassLiveActivity"
+if [ -n "${EXT_DIR:-}" ] && unzip -l "$OUT" "$EXT_BIN" >/dev/null 2>&1; then
+  PATCH="$(mktemp -d)"
+  unzip -q "$OUT" "$EXT_BIN" -d "$PATCH"
+  "$ROOT/scripts/insert-dylib.py" "$PATCH/$EXT_BIN" @rpath/SpotifyGlassAppGroups.dylib
+  ldid -e "$PATCH/$EXT_BIN" > "$PATCH/ents.plist"
+  ldid -S"$PATCH/ents.plist" "$PATCH/$EXT_BIN"
+  OUT_ABS="$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")"
+  (cd "$PATCH" && zip -q "$OUT_ABS" "$EXT_BIN")
+  rm -rf "$PATCH"
+else
+  echo "    no SpotifyGlassLiveActivity.appex in this IPA"
+fi
+
 if [ -n "${EXT_DIR:-}" ]; then
   echo "==> adding the Live Activity intents to Spotify's App Intents metadata"
   "$ROOT/scripts/merge-appintents.py" "$OUT" "$APP_DIR" "$EXT_DIR/app/Metadata.appintents"

@@ -10,6 +10,7 @@
 #import "Shared/LockScreenArtwork/LockScreenArtwork.h"
 #import "Shared/LyricArtwork/LyricArtwork.h"
 #import "Shared/LyricArtwork/LyricClip.h"
+#import "Shared/Widgets/WidgetData.h"
 #import "Shared/LyricsSources/LyricsSources.h"
 
 UIViewController *SGLockScreenSettingsPage(void) {
@@ -22,6 +23,7 @@ UIViewController *SGLockScreenSettingsPage(void) {
     [artworkRows addObjectsFromArray:SGLyricArtworkRows()];
     [artworkRows addObject:SGFlagRow(@"Companion content", @"ios-feature-lockscreen.companion_content_enabled")];
     [sections addObject:SGSection(@"Artwork", artworkRows)];
+    [sections addObject:SGSection(@"Widgets", SGWidgetRows())];
     [sections addObject:SGSection(@"Storage", @[
         SGStatActionRow(@"Animated clips", @"Rendered lyric clips kept on the phone. They render again if cleared.",
             ^NSString *{ return [NSByteCountFormatter stringFromByteCount:(long long)SGLyricClipCacheBytes() countStyle:NSByteCountFormatterCountStyleFile]; },

@@ -19,6 +19,8 @@ private typealias Tab = SGLyricsAttributes.Tab
 struct SGLiveActivityBundle: WidgetBundle {
     var body: some Widget {
         SGLyricsLiveActivity()
+        SGNowPlayingWidget()
+        SGStatsWidget()
     }
 }
 

@@ -33,6 +33,12 @@
 #define SGKeyPlayerLyricsOnly @"spotifyglass.hide.playerLyricsOnly"
 void SGSetPlayerLyricsOnly(BOOL on);
 
+// Focus player (Batch 64): one switch over the whole declutter — every card under the player
+// folds away and the player's side buttons (shuffle, repeat, connect, share, queue, add-to)
+// leave with them, so the screen is the cover, the song and the transport. The hooks in
+// PlayerDeclutter.x read it beside the keys above; the per-part switches still apply on top.
+#define SGKeyPlayerFocus @"spotifyglass.hide.focusPlayer"
+
 @class SGModRow, SGModSection;
 // PlayerSettings.m: the player screen's sections of the Player page, the Queue & devices page and the
 // "Glass lyrics" row of the Lyrics page.

@@ -41,9 +41,11 @@ static NSString *hiddenKeyFor(UICollectionViewCell *cell) {
     for (UIView *v = cell.superview; v; v = v.superview) {
         if ([v isKindOfClass:cell.class]) return nil;
     }
+    // Focus player (Batch 64): every card folds, whichever its own switch says.
+    BOOL focus = SGHidden(SGKeyPlayerFocus);
     NSString *names = nil;
     for (size_t i = 0; i < sizeof(cards) / sizeof(cards[0]); i++) {
-        if (!SGHidden(cards[i].key)) continue;
+        if (!focus && !SGHidden(cards[i].key)) continue;
         if (!names) names = classNamesIn(cell);
         if ([names containsString:@"NowPlaying_ScrollAPI"] && [names containsString:cards[i].marker]) return cards[i].key;
     }
@@ -83,8 +85,9 @@ static void finish(UIViewController *unit, BOOL changed) {
     NSArray<UIView *> *items = SGRowIn(((UIViewController *)self).viewIfLoaded).arrangedSubviews;
     if (items.count != 5 || !SGHasClass(items[2], @"PlayButton")) return;
     BOOL changed = NO;
-    if (SGHidden(SGHideShuffle)) changed |= vanish(items[0]);
-    if (SGHidden(SGHideRepeat)) changed |= vanish(items[4]);
+    BOOL focus = SGHidden(SGKeyPlayerFocus);
+    if (focus || SGHidden(SGHideShuffle)) changed |= vanish(items[0]);
+    if (focus || SGHidden(SGHideRepeat)) changed |= vanish(items[4]);
     finish((UIViewController *)self, changed);
 }
 %end
@@ -93,14 +96,15 @@ static void finish(UIViewController *unit, BOOL changed) {
 - (void)viewDidLayoutSubviews {
     %orig;
     BOOL changed = NO;
+    BOOL focus = SGHidden(SGKeyPlayerFocus);
     for (UIView *item in SGRowIn(((UIViewController *)self).viewIfLoaded).arrangedSubviews) {
         if (item.hidden || item.bounds.size.width < 20) continue;
         if (SGHasClass(item, @"Connect")) {
-            if (SGHidden(SGHideConnect)) changed |= vanish(item);
+            if (focus || SGHidden(SGHideConnect)) changed |= vanish(item);
         } else if (SGHasClass(item, @"QueueButton")) {
-            if (SGHidden(SGHideQueue)) changed |= vanish(item);
+            if (focus || SGHidden(SGHideQueue)) changed |= vanish(item);
         } else if (item.bounds.size.width <= 48 && SGHasClass(item, @"EncoreButton")) {
-            if (SGHidden(SGHideShare)) changed |= vanish(item);
+            if (focus || SGHidden(SGHideShare)) changed |= vanish(item);
         }
     }
     finish((UIViewController *)self, changed);
@@ -110,7 +114,7 @@ static void finish(UIViewController *unit, BOOL changed) {
 %hook _TtC20NowPlaying_ModesImpl23InformationElementsUnit
 - (void)viewDidLayoutSubviews {
     %orig;
-    if (!SGHidden(SGHideAddTo)) return;
+    if (!SGHidden(SGHideAddTo) && !SGHidden(SGKeyPlayerFocus)) return;
     BOOL changed = NO;
     for (UIView *item in SGRowIn(((UIViewController *)self).viewIfLoaded).arrangedSubviews) {
         if (SGHasClass(item, @"AddToButton")) changed |= vanish(item);

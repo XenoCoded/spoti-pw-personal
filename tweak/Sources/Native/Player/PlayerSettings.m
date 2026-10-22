@@ -9,6 +9,7 @@ NSArray<SGModSection *> *SGNativePlayerScreenSections(void) {
     fluid.visible = ^BOOL { return SGFlag(SGKeyPlayerBackdrop, NO); };
     return @[
         SGSection(@"Player screen", @[
+            SGOptionRow(@"Focus player", @"Nothing but the song: every card below the player folds away, and shuffle, repeat, connect, share, the queue and add-to leave the controls too.", SGKeyPlayerFocus),
             SGOptionRow(@"Artwork background", nil, SGKeyPlayerBackdrop),
             fluid,
             SGOptionRow(@"Glass header buttons", nil, SGKeyPlayer),

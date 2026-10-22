@@ -10,12 +10,20 @@
 #import "Core/SGCore.h"
 #import "ListeningStats.h"
 #import "Shared/Player/PlayerState.h"
+#import "Shared/Lyrics/Lyrics.h"
 
 @interface SGStatsWatcher : NSObject <SGPlayerStateObserver>
 @property (nonatomic, copy) NSString *uri;
 @property (nonatomic, copy) NSString *countedURI;
 @property (nonatomic) BOOL playing;
 @property (nonatomic, strong) NSDate *since;
+// A play waiting on the scrobble rule (Batch 85): the journal entry is
+// already written, but the counter waits for the threshold.
+@property (nonatomic, copy) NSString *pendingURI;
+@property (nonatomic, copy) NSString *pendingTitle;
+@property (nonatomic, copy) NSString *pendingArtist;
+@property (nonatomic) NSTimeInterval pendingDuration;
+@property (nonatomic, strong) NSTimer *ruleTimer;
 @end
 
 @implementation SGStatsWatcher
@@ -27,18 +35,71 @@
     self.since = [NSDate date];
 }
 
+- (void)dropPending {
+    self.pendingURI = nil;
+    self.pendingTitle = nil;
+    self.pendingArtist = nil;
+    [self.ruleTimer invalidate];
+    self.ruleTimer = nil;
+}
+
+- (void)armPending:(NSString *)uri title:(NSString *)title artist:(NSString *)artist
+          duration:(NSTimeInterval)duration {
+    self.pendingURI = uri;
+    self.pendingTitle = title;
+    self.pendingArtist = artist;
+    self.pendingDuration = duration;
+    [self.ruleTimer invalidate];
+    self.ruleTimer = [NSTimer scheduledTimerWithTimeInterval:1 target:self
+                            selector:@selector(ruleTick) userInfo:nil repeats:YES];
+}
+
+// The scrobble rule's clock: a waiting play counts when the position
+// crosses its threshold. Seeking past it counts, pausing freezes the
+// position so nothing crosses, and a track skipped early simply never
+// counts — the pending play dies with the track change.
+- (void)ruleTick {
+    if (!self.pendingURI) {
+        [self.ruleTimer invalidate];
+        self.ruleTimer = nil;
+        return;
+    }
+    double durationMs = self.pendingDuration * 1000;
+    double thresholdMs = SGInt(SGKeyStatsPlayRule, 0) == 2
+        ? MIN(240000, durationMs) : durationMs * 0.5;
+    if (thresholdMs <= 0) thresholdMs = 0;
+    if (SGKaraokePositionMs() >= thresholdMs) {
+        SGStatsCountPlay(self.pendingURI, self.pendingTitle, self.pendingArtist);
+        self.countedURI = self.pendingURI;
+        [self dropPending];
+    }
+}
+
 - (void)playerStateDidChange:(SPTPlayerState *)state {
     [self flush];
     NSString *uri = SGURIString(state.track.URI);
     BOOL playing = uri != nil && !state.isPaused;
-    if (playing && ![uri isEqualToString:self.countedURI]) {
-        SGStatsCountPlay(uri, state.track.trackTitle, state.track.artistName);
-        // The journal entry for the same play (Batch 55): the duration is
-        // the state's, in seconds, the same one the Live Activity reads.
+    // A new track kills a waiting play uncounted; a pause and resume is
+    // not a new track, so the wait survives it.
+    if (![uri isEqualToString:self.uri]) [self dropPending];
+    if (playing && uri && ![uri isEqualToString:self.countedURI]
+        && ![uri isEqualToString:self.pendingURI]) {
+        // The journal entry for the play (Batch 55) is written at once so
+        // the heard seconds always have somewhere to land; only the play
+        // counter can wait on the rule.
         SGStatsJournalPlay(uri, state.track.trackTitle, state.track.artistName, state.duration);
-        self.countedURI = uri;
+        if (SGInt(SGKeyStatsPlayRule, 0) == 0) {
+            SGStatsCountPlay(uri, state.track.trackTitle, state.track.artistName);
+            self.countedURI = uri;
+        } else {
+            [self armPending:uri title:state.track.trackTitle
+                       artist:state.track.artistName duration:state.duration];
+        }
     }
-    if (!uri) self.countedURI = nil;
+    if (!uri) {
+        self.countedURI = nil;
+        [self dropPending];
+    }
     self.uri = uri;
     self.playing = playing;
     self.since = playing ? [NSDate date] : nil;

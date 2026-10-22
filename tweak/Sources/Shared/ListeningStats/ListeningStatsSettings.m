@@ -80,6 +80,13 @@ static NSString *journalWhen(NSTimeInterval when) {
 UIViewController *SGListeningStatsPage(void) {
     SGModRow *on = SGOptionRow(@"Listening stats", @"Counts time and plays on this phone only, in the app's own files. Nothing is sent anywhere.", SGKeyListeningStats);
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObject:SGSection(nil, @[on])];
+    // What counts as a play (Batch 85): the scrobbler rule. Seconds
+    // always accrue; only the play counter obeys the choice.
+    [sections addObject:SGSection(nil, @[
+        SGChoiceRow(@"Count a play", @"Skip-happy listening stops inflating the tops.",
+                    SGKeyStatsPlayRule,
+                    @[@"When the track starts", @"After half the track", @"After 4 minutes"], 0),
+    ])];
     if (SGFlag(SGKeyListeningStats, NO)) {
         NSDictionary *snapshot = SGStatsSnapshot();
         double total = [snapshot[@"totalSeconds"] doubleValue];

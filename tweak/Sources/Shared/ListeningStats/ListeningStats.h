@@ -6,6 +6,10 @@
 #import <UIKit/UIKit.h>
 
 #define SGKeyListeningStats @"spotifyglass.listeningStats"
+// What counts as a play (Batch 85): 0 when the track starts, 1 after
+// half of it, 2 after four minutes (shorter tracks: at the end).
+// Seconds always accrue; only the play counter obeys the choice.
+#define SGKeyStatsPlayRule @"spotifyglass.stats.playRule"
 
 // The watcher in ListeningStats.x calls these as the state changes; the page reads a
 // snapshot. Main thread only: the player state and the pages both live there.

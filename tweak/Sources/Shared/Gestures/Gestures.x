@@ -30,34 +30,39 @@ void SGGestureSetObserver(void (^observer)(SGGestureAction action)) {
 #pragma mark - what a cell does
 
 static void perform(SGGestureAction action) {
-    SPTNowPlayingPlaybackControllerImplementation *player = sg_player;
-    if (!player) return;
+    // The observer (the haptics) hears every real action, and only the
+    // transport cases below need the playback controller: gating the
+    // whole switch on it used to silence copy link, copy card, rate,
+    // bookmark, A-B, sleep and the rest whenever the controller had
+    // not been seen yet — a cold launch straight into the settings —
+    // or after it went away (Batch 91).
     if (action != SGGestureNothing && sg_observer) sg_observer(action);
+    SPTNowPlayingPlaybackControllerImplementation *player = sg_player;
     switch (action) {
         case SGGestureNothing:
             break;
         case SGGestureSeekBack:
-            if (player.seekingAllowed) [player seekBackwardBySeconds:SGGestureStep()];
+            if (player && player.seekingAllowed) [player seekBackwardBySeconds:SGGestureStep()];
             break;
         case SGGestureSeekForward:
-            if (player.seekingAllowed) [player seekForwardBySeconds:SGGestureStep()];
+            if (player && player.seekingAllowed) [player seekForwardBySeconds:SGGestureStep()];
             break;
         case SGGesturePlayPause:
-            if (player.isPaused ? !player.disallowResuming : !player.disallowPausing) {
+            if (player && (player.isPaused ? !player.disallowResuming : !player.disallowPausing)) {
                 [player setPaused:!player.isPaused];
             }
             break;
         case SGGestureNextTrack:
-            if (player.canSkipNext) [player skipToNextWhileDragging:NO];
+            if (player && player.canSkipNext) [player skipToNextWhileDragging:NO];
             break;
         case SGGesturePreviousTrack:
-            [player skipToPreviousWhileDragging:NO];
+            if (player) [player skipToPreviousWhileDragging:NO];
             break;
         case SGGestureShuffle:
-            [player setGlobalShuffleMode:!player.isShuffling];
+            if (player) [player setGlobalShuffleMode:!player.isShuffling];
             break;
         case SGGestureRepeat:
-            [player toggleRepeatMode];
+            if (player) [player toggleRepeatMode];
             break;
         // Speed in quarter steps over the range Speed & pitch itself allows
         // (personal fork): the hold-to-speed of other players, on the double tap

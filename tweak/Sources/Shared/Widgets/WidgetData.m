@@ -41,6 +41,7 @@ void SGWidgetDataWrite(void) {
     NSInteger lead = lines.count ? SGKaraokeLeadLine(lines, SGKaraokePositionMs()) : -1;
     NSString *line = lead >= 0 && lead < (NSInteger)lines.count
         ? (SGKaraokeLineText(lines[(NSUInteger)lead]) ?: @"") : @"";
+    BOOL lineChanged = ![line isEqualToString:[suite stringForKey:@"sg.line"] ?: @""];
     [suite setObject:line forKey:@"sg.line"];
     // The day so far, out of the stats store's day buckets.
     NSDictionary *snapshot = SGStatsSnapshot();
@@ -71,14 +72,27 @@ void SGWidgetDataWrite(void) {
     if (songChanged) {
         // The cover rides as a file in the shared container, swapped with
         // the song; the widgets ask for a fresh look at the same moment.
+        // A song with no cover to send takes the old file away with it,
+        // or the widget keeps showing the previous song's face.
         NSURL *container = [NSFileManager.defaultManager
             containerURLForSecurityApplicationGroupIdentifier:sg_suite];
         MPMediaItemArtwork *artwork = MPNowPlayingInfoCenter.defaultCenter
             .nowPlayingInfo[MPMediaItemPropertyArtwork];
         UIImage *image = [artwork imageWithSize:CGSizeMake(400, 400)];
         NSData *jpeg = image ? UIImageJPEGRepresentation(image, 0.75) : nil;
-        if (container && jpeg)
-            [jpeg writeToURL:[container URLByAppendingPathComponent:@"sg-cover.jpg"] atomically:YES];
+        NSURL *coverFile = container ? [container URLByAppendingPathComponent:@"sg-cover.jpg"] : nil;
+        if (coverFile && jpeg) [jpeg writeToURL:coverFile atomically:YES];
+        else if (coverFile) [NSFileManager.defaultManager removeItemAtURL:coverFile error:nil];
+        // One log line per song (Batch 91): this path had no logging at
+        // all, so a suite the shim never redirected — writes landing in
+        // a private store, the widget reading a different one — looked
+        // exactly like success from everywhere.
+        SGLog(@"widgets: %@ — %@ (container %@)", title, artist,
+              container ? @"shared" : @"MISSING");
+        [SGWidgetReload reloadWidgets];
+    } else if (lineChanged) {
+        // The line is the widget's moving part; it refreshes on its own
+        // change too, not only when the song turns over.
         [SGWidgetReload reloadWidgets];
     }
 }

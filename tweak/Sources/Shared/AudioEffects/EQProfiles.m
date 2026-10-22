@@ -33,7 +33,21 @@ NSString *SGEQRouteClassName(NSString *routeClass) {
 
 static NSMutableDictionary<NSString *, NSDictionary *> *profiles(void) {
     NSDictionary *stored = [NSUserDefaults.standardUserDefaults dictionaryForKey:SGKeyDSPProfiles];
-    return stored ? [stored mutableCopy] : [NSMutableDictionary dictionary];
+    // Only well-shaped pieces come back (Batch 91): applying a profile
+    // writes its pieces straight into the effects' own keys, and the
+    // effects read the gains as strings and the bass as a number — a
+    // restored store with anything else in a slot crashed the apply.
+    NSMutableDictionary<NSString *, NSDictionary *> *clean = [NSMutableDictionary dictionary];
+    for (NSString *route in stored) {
+        id profile = stored[route];
+        if (![profile isKindOfClass:NSDictionary.class]) continue;
+        NSMutableDictionary *kept = [NSMutableDictionary dictionary];
+        if ([profile[@"eq"] isKindOfClass:NSString.class]) kept[@"eq"] = profile[@"eq"];
+        if ([profile[@"geq"] isKindOfClass:NSString.class]) kept[@"geq"] = profile[@"geq"];
+        if ([profile[@"bass"] isKindOfClass:NSNumber.class]) kept[@"bass"] = profile[@"bass"];
+        if (kept.count) clean[route] = kept;
+    }
+    return clean;
 }
 
 BOOL SGEQHasProfile(NSString *routeClass) {

@@ -36,19 +36,45 @@ static void normalizeStats(void) {
         if (![row[@"seconds"] isKindOfClass:NSNumber.class]) row[@"seconds"] = @0;
         if (row[@"lastPlayed"] && ![row[@"lastPlayed"] isKindOfClass:NSNumber.class])
             [row removeObjectForKey:@"lastPlayed"];
+        if (row[@"firstPlayed"] && ![row[@"firstPlayed"] isKindOfClass:NSNumber.class])
+            [row removeObjectForKey:@"firstPlayed"];
     }
-    if (sg_stats[@"days"] && ![sg_stats[@"days"] isKindOfClass:NSMutableDictionary.class])
-        [sg_stats removeObjectForKey:@"days"];
-    NSMutableDictionary *days = sg_stats[@"days"];
-    for (NSString *day in [days allKeys]) {
-        id entry = days[day];
-        if (![entry isKindOfClass:NSMutableDictionary.class]) {
-            [days removeObjectForKey:day];
+    // The day buckets are flat maps, day -> number: "days" holds the
+    // day's seconds, "daysPlays" its plays, "daysTracks" the day's
+    // track list — the shapes SGStatsAddListening and SGStatsCountPlay
+    // write. Anything else in a slot is zeroed or emptied, never
+    // trusted; the bucket itself is dropped only when it is not a
+    // dictionary at all.
+    for (NSString *bucket in @[@"days", @"daysPlays"]) {
+        if (sg_stats[bucket] && ![sg_stats[bucket] isKindOfClass:NSMutableDictionary.class])
+            [sg_stats removeObjectForKey:bucket];
+        NSMutableDictionary *days = sg_stats[bucket];
+        for (NSString *day in [days allKeys])
+            if (![days[day] isKindOfClass:NSNumber.class]) days[day] = @0;
+    }
+    if (sg_stats[@"daysTracks"] && ![sg_stats[@"daysTracks"] isKindOfClass:NSMutableDictionary.class])
+        [sg_stats removeObjectForKey:@"daysTracks"];
+    NSMutableDictionary *daysTracks = sg_stats[@"daysTracks"];
+    for (NSString *day in [daysTracks allKeys])
+        if (![daysTracks[day] isKindOfClass:NSArray.class]) daysTracks[day] = @[];
+    // The journal too (Batch 91): the flush walks it on every stretch
+    // of listening and the stats page reads its fields by name, so an
+    // entry that is not a play-shaped dictionary goes, and a field of
+    // the wrong kind is zeroed or blanked like the tracks above.
+    if (sg_stats[@"journal"] && ![sg_stats[@"journal"] isKindOfClass:NSMutableArray.class])
+        [sg_stats removeObjectForKey:@"journal"];
+    NSMutableArray *journal = sg_stats[@"journal"];
+    for (NSInteger i = (NSInteger)journal.count - 1; i >= 0; i--) {
+        id play = journal[(NSUInteger)i];
+        if (![play isKindOfClass:NSMutableDictionary.class] || ![play[@"uri"] isKindOfClass:NSString.class]) {
+            [journal removeObjectAtIndex:(NSUInteger)i];
             continue;
         }
-        NSMutableDictionary *row = entry;
-        if (![row[@"plays"] isKindOfClass:NSNumber.class]) row[@"plays"] = @0;
-        if (![row[@"seconds"] isKindOfClass:NSNumber.class]) row[@"seconds"] = @0;
+        NSMutableDictionary *entry = play;
+        if (![entry[@"t"] isKindOfClass:NSNumber.class]) entry[@"t"] = @0;
+        if (![entry[@"seconds"] isKindOfClass:NSNumber.class]) entry[@"seconds"] = @0;
+        if (entry[@"title"] && ![entry[@"title"] isKindOfClass:NSString.class]) entry[@"title"] = @"";
+        if (entry[@"artist"] && ![entry[@"artist"] isKindOfClass:NSString.class]) entry[@"artist"] = @"";
     }
 }
 
@@ -122,9 +148,12 @@ void SGStatsCountPlay(NSString *uri, NSString *title, NSString *artist) {
     }
     NSString *today = todayKey();
     plays[today] = @([plays[today] doubleValue] + 1);
-    if (plays.count > 35) {
+    // Kept a year and a week (Batch 91): the heatmap card draws the
+    // last 53 weeks from these buckets, and a five-week horizon left
+    // most of its grid permanently blank.
+    if (plays.count > 371) {
         NSArray<NSString *> *sorted = [plays.allKeys sortedArrayUsingSelector:@selector(compare:)];
-        for (NSString *old in [sorted subarrayWithRange:NSMakeRange(0, sorted.count - 35)]) {
+        for (NSString *old in [sorted subarrayWithRange:NSMakeRange(0, sorted.count - 371)]) {
             [plays removeObjectForKey:old];
         }
     }
@@ -164,9 +193,9 @@ void SGStatsAddListening(NSString *uri, NSTimeInterval seconds) {
     NSString *today = todayKey();
     BOOL newDay = !days[today];
     days[today] = @([days[today] doubleValue] + seconds);
-    if (newDay && days.count > 35) {
+    if (newDay && days.count > 371) {
         NSArray<NSString *> *sorted = [days.allKeys sortedArrayUsingSelector:@selector(compare:)];
-        for (NSString *old in [sorted subarrayWithRange:NSMakeRange(0, sorted.count - 35)]) {
+        for (NSString *old in [sorted subarrayWithRange:NSMakeRange(0, sorted.count - 371)]) {
             [days removeObjectForKey:old];
         }
     }

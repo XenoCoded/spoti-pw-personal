@@ -708,7 +708,12 @@ static const CGFloat kTranslationLit = 0.6;
 - (SGRKaraokeSweep *)sweepOf:(NSArray<SGKaraokeWord *> *)words font:(UIFont *)font frames:(NSArray<NSValue *> *)frames
                      offsets:(NSArray<NSNumber *> *)offsets wholeFrom:(double)start {
     if (!words.count || frames.count != words.count) return nil;
-    BOOL rightToLeft = readsRightToLeft([[words valueForKey:@"text"] componentsJoinedByString:@""]);
+    // Joined by hand rather than through KVC (Batch 91): valueForKey
+    // turns a nil text into NSNull and the join throws on it. Every
+    // producer promises a string today; the view stops depending on it.
+    NSMutableString *allText = [NSMutableString string];
+    for (SGKaraokeWord *word in words) [allText appendString:word.text ?: @""];
+    BOOL rightToLeft = readsRightToLeft(allText);
     NSMutableArray<SGRKaraokeWordView *> *views = [NSMutableArray arrayWithCapacity:words.count];
     for (NSUInteger i = 0; i < words.count; i++) {
         SGRKaraokeWordView *view = [[SGRKaraokeWordView alloc] initWithWord:words[i] font:font rightToLeft:rightToLeft];

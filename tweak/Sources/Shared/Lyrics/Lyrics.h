@@ -87,6 +87,8 @@ void SGKaraokeAlignVoices(NSArray<SGKaraokeLine *> *lines);
 // (SGKaraokeTimingNone) where it did not; nil for a body with no lines.
 NSArray<SGKaraokeLine *> *SGKaraokeLinesFromBody(NSData *body);
 // Lines timed only by their starts, the words inside them estimated; a ♪ or empty text is a break.
+// One start per text: the two arrays are walked side by side, so a
+// caller with fewer starts than texts is out of bounds, not estimated.
 NSArray<SGKaraokeLine *> *SGKaraokeEstimatedLines(NSArray<NSNumber *> *starts, NSArray<NSString *> *texts);
 // Lines with no time at all, for lyrics that come as plain text; a ♪ or empty text is dropped.
 NSArray<SGKaraokeLine *> *SGKaraokeStaticLines(NSArray<NSString *> *texts);

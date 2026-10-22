@@ -1954,8 +1954,12 @@ static void warmClips(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSInte
     for (NSInteger ahead = 1; ahead <= warmDepth; ahead++) {
         NSInteger j = index + ahead;
         if (j < 0 || j >= (NSInteger)lines.count) continue;
-        NSString *clipKey = [NSString stringWithFormat:@"%@/%ld-%ld-%ld", trackID, (long)j, (long)style,
-                             (long)effectiveQuality()];
+        // The key the offer itself will build for this line — the
+        // line key (track/index/style) plus style and quality again —
+        // or the warmed file is never found and the warming was waste
+        // heat (Batch 91).
+        NSString *clipKey = [NSString stringWithFormat:@"%@/%ld/%ld-%ld-%ld", trackID, (long)j, (long)style,
+                             (long)style, (long)effectiveQuality()];
         if (SGLyricClipCachedFile(clipKey)) continue;
         if (!coverImage) {
             @synchronized (sg_lockObject()) { coverImage = cover ? [cover imageWithSize:specSize] : nil; }

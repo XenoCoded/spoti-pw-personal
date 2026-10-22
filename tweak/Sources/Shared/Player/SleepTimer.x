@@ -5,6 +5,18 @@
 #import "Headers/SPTPlayer.h"
 #import "SleepTimer.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/Player/PlayerState.h"
+
+// The item being counted on: the karaoke system's id when it has one
+// (songs), else the id out of the player state's own URI — episodes
+// never enter the lyrics pipeline, and a sleep timer set on a podcast
+// still has to arm (Batch 91).
+static NSString *sg_trackID(void) {
+    NSString *karaoke = SGKaraokePlayingTrack();
+    if (karaoke.length) return karaoke;
+    NSString *uri = SGURIString(SGPlayerState().track.URI);
+    return uri.length ? [uri componentsSeparatedByString:@":"].lastObject : nil;
+}
 
 static const NSInteger kSpans[] = {0, 15 * 60, 30 * 60, 45 * 60, 60 * 60, 0};
 // End of track pauses this close to the end, so the next track never starts
@@ -52,6 +64,14 @@ static void timerUp(id<SPTPlayer> player) {
 static void check(void) {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     NSInteger choice = [defaults integerForKey:SGKeySleepTimer];
+    if (choice > 8) {
+        // A stored choice past the picker's range (an old build, a
+        // restored backup) can never fire; the countdown stands down
+        // instead of ticking at the fast pace forever (Batch 91).
+        disarm();
+        [defaults setInteger:0 forKey:SGKeySleepTimer];
+        choice = 0;
+    }
     id<SPTPlayer> player = SGKaraokePlayer();
     // Stop when the queue ends (Batch 56): a standing rule beside the
     // countdown, watched on the same tick. The last song of the queue is
@@ -86,7 +106,7 @@ static void check(void) {
     if (choice == 5) {
         // End of track: remember the track it was set on; a different one
         // means it slipped past the end unpaused, which still counts as up.
-        NSString *trackID = SGKaraokePlayingTrack();
+        NSString *trackID = sg_trackID();
         NSString *armed = [defaults stringForKey:SGKeySleepTimerTrack];
         if (!armed) {
             if (trackID) [defaults setObject:trackID forKey:SGKeySleepTimerTrack];
@@ -94,7 +114,11 @@ static void check(void) {
         }
         double duration = [player.state respondsToSelector:@selector(duration)] ? player.state.duration : 0;
         NSInteger position = SGKaraokePositionMs();
-        BOOL up = !trackID || ![trackID isEqualToString:armed]
+        // A moment with no track showing — the gap between two — is
+        // not the end of anything (Batch 91): only a different track
+        // than the armed one, or the armed one's own last moments,
+        // count as up.
+        BOOL up = (trackID && ![trackID isEqualToString:armed])
             || (duration > 0 && position >= 0 && duration * 1000 - position < kEndOfTrackMs);
         if (up) timerUp(player);
         return;
@@ -109,7 +133,7 @@ static void check(void) {
         static const NSInteger kCounts[] = {0, 0, 0, 0, 0, 0, 2, 3, 5};
         if (choice >= (NSInteger)(sizeof(kCounts) / sizeof(kCounts[0]))) return;
         NSInteger left = [defaults integerForKey:SGKeySleepTimerLeft];
-        NSString *trackID = SGKaraokePlayingTrack();
+        NSString *trackID = sg_trackID();
         NSString *counted = [defaults stringForKey:SGKeySleepTimerTrack];
         // Armed for a different choice is not armed at all — the same
         // rule the spans keep with their own armed key.
@@ -130,7 +154,10 @@ static void check(void) {
         if (left == 1) {
             double duration = [player.state respondsToSelector:@selector(duration)] ? player.state.duration : 0;
             NSInteger position = SGKaraokePositionMs();
-            if (!trackID || (duration > 0 && position >= 0 && duration * 1000 - position < kEndOfTrackMs))
+            // The same transient-nil rule as end of track (Batch 91):
+            // if the item has truly ended, playback has stopped on its
+            // own and there is nothing left to pause.
+            if (duration > 0 && position >= 0 && duration * 1000 - position < kEndOfTrackMs)
                 timerUp(player);
         }
         return;

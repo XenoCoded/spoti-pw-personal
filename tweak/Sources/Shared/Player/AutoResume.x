@@ -27,7 +27,10 @@ static void check(void) {
     }
     NSDictionary *marks = [NSUserDefaults.standardUserDefaults dictionaryForKey:SGKeyBookmarks];
     NSNumber *mark = [marks isKindOfClass:NSDictionary.class] ? marks[track] : nil;
-    if (!mark) return;
+    // A stored value that is not a number (a restored backup, an older
+    // build) is no mark at all; the sanitised reader in Bookmark.m
+    // cannot speak for this second, direct one (Batch 91).
+    if (![mark isKindOfClass:NSNumber.class]) return;
     // A mark in the first seconds is a place the play passes anyway, and
     // one saved by accident there would yank every play for nothing.
     if (mark.doubleValue < 5) { sg_resumedFor = [track copy]; return; }

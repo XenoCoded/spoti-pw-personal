@@ -70,6 +70,7 @@ void SGLyricsCacheSave(NSString *trackID, SGLyricsResult *result) {
         }
         NSMutableDictionary *entry = [@{@"start": @(line.start), @"end": @(line.end), @"words": words} mutableCopy];
         if (line.translation.length) entry[@"translation"] = line.translation;
+        if (line.voice.length) entry[@"voice"] = line.voice;
         [lines addObject:entry];
     }
     NSDictionary *sheet = @{@"provider": result.provider ?: @"", @"wordTimed": @(result.wordTimed),
@@ -101,6 +102,8 @@ SGLyricsAsk SGLyricsCacheAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResu
         line.end = [entry[@"end"] integerValue];
         id translation = entry[@"translation"];
         line.translation = [translation isKindOfClass:NSString.class] ? translation : nil;
+        id voice = entry[@"voice"];
+        line.voice = [voice isKindOfClass:NSString.class] ? voice : nil;
         line.timing = wordTimed ? SGKaraokeTimingWords : SGKaraokeTimingLine;
         NSMutableArray<SGKaraokeWord *> *words = [NSMutableArray array];
         id wordEntries = entry[@"words"];

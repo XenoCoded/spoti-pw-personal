@@ -99,6 +99,7 @@ NSURL *SGSpotifyURIFromText(NSString *text) {
 %hook SPTLinkDispatcherImplementation
 - (void)setMainUILoaded:(BOOL)loaded {
     %orig;
+    if (!sg_linkDispatcher) SGLog(@"links: dispatcher captured");
     sg_linkDispatcher = (SPTLinkDispatcherImplementation *)self;
 }
 %end

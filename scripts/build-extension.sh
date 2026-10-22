@@ -47,7 +47,10 @@ metadata() {
 
 echo "==> building $NAME.appex"
 xcrun --sdk iphoneos swiftc -O -wmo -parse-as-library -target arm64-apple-ios17.0 -module-name "$NAME" \
-  -Xlinker -e -Xlinker _NSExtensionMain -o "$APPEX/$NAME" "$SHARED" "$WIDGET" "$HOMEWIDGETS"
+  -Xlinker -e -Xlinker _NSExtensionMain \
+  -Xlinker -rpath -Xlinker @executable_path/../../Frameworks \
+  -Xlinker -rpath -Xlinker @executable_path/Frameworks \
+  -o "$APPEX/$NAME" "$SHARED" "$WIDGET" "$HOMEWIDGETS"
 metadata "$NAME" 17.0 "$APPEX" "$SHARED" "$WIDGET" "$HOMEWIDGETS"
 
 sed -e "s/HOST_BUNDLE_ID/$(plutil -extract CFBundleIdentifier raw -o - "$HOST_PLIST")/" \

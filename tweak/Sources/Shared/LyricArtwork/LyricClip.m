@@ -54,10 +54,18 @@ static NSMutableDictionary<NSString *, NSMutableArray<void (^)(NSURL *)> *> *wai
     return map;
 }
 
+// Defined with the render entry point below; settle needs it (its
+// removal there is the Batch 91 priority fix).
+static NSMutableSet<NSString *> *priorityKeys(void);
+
 static void settle(NSString *key, NSURL *file) {
     NSArray<void (^)(NSURL *)> *waiting;
     @synchronized (rendering()) {
         [rendering() removeObject:key];
+        // And out of the priority set (Batch 91): it was only ever
+        // added to, so after the first on-screen line rendered, every
+        // speculative render was refused for the rest of the process.
+        [priorityKeys() removeObject:key];
         waiting = [waiters()[key] copy];
         [waiters() removeObjectForKey:key];
     }

@@ -84,6 +84,10 @@ static void check(void) {
     restoreIfNeeded();
     if (sg_a < 0 || sg_b < 0) return;
     NSString *playing = SGKaraokePlayingTrack();
+    // No track showing — the gap between two, a cold start — is not a
+    // track change (Batch 91): the loop is spent only by a different
+    // track, the way the sleep timer now reads its own nils.
+    if (!playing) return;
     if (![playing isEqualToString:sg_track]) {
         SGABClear();
         return;

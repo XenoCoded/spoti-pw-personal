@@ -422,7 +422,18 @@ void SGRecordRecent(NSString *page, NSString *row) {
 }
 
 NSArray<NSDictionary<NSString *, NSString *> *> *SGRecentSettings(void) {
-    return [NSUserDefaults.standardUserDefaults arrayForKey:SGKeySettingsRecents] ?: @[];
+    NSArray *stored = [NSUserDefaults.standardUserDefaults arrayForKey:SGKeySettingsRecents];
+    // Only page-shaped entries come back (Batch 91): the search page
+    // subscripts every element for its page and row by name, and the
+    // store can be written by a restored backup as easily as by the
+    // row tap that usually writes it.
+    NSMutableArray<NSDictionary<NSString *, NSString *> *> *clean = [NSMutableArray array];
+    for (id entry in stored) {
+        if (![entry isKindOfClass:NSDictionary.class]) continue;
+        if (![entry[@"page"] isKindOfClass:NSString.class]) continue;
+        [clean addObject:entry];
+    }
+    return clean;
 }
 
 static NSString *sg_focusPage, *sg_focusRow;

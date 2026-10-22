@@ -1,6 +1,7 @@
 // PlayerState.h names the hooks and why they are the ones.
 #import "Core/SGCore.h"
 #import "PlayerState.h"
+#import "Shared/ArtworkPalette/ArtworkPalette.h"
 
 NSString *SGURIString(id uri) {
     if ([uri isKindOfClass:NSString.class]) return uri;
@@ -97,5 +98,10 @@ static SGPlayerObserver *sg_ownObserver;
 
 %ctor {
     %init;
+    // The cover palette starts here (Batch 91): it used to start only
+    // from the accent files, and only when match-cover-art was on, so
+    // the chart card and the Live Activity tint — which read the same
+    // palette — sat at Spotify green forever in a stock setup.
+    SGArtworkPaletteStart();
     SGRequireClasses(@[@"_TtC23NowPlaying_PlatformImpl28StatefulPlayerImplementation", @"SPTEsperantoPlayer", @"SPTPlayerState"]);
 }

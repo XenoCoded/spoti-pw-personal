@@ -11,7 +11,22 @@ NSString *const SGTrackArtist = @"artist";
 
 NSArray<NSDictionary *> *SGBinnedTracks(void) {
     NSArray *list = [NSUserDefaults.standardUserDefaults arrayForKey:SGKeyTrackBinList];
-    return list ?: @[];
+    // Rebuilt to the entry shape (Batch 91): the readers subscript
+    // every element and message its uri as a string, and the store is
+    // only promised to be an array — a restored backup can put
+    // anything in it. What is not a track entry does not come back.
+    NSMutableArray<NSDictionary *> *clean = [NSMutableArray array];
+    for (id entry in list) {
+        if (![entry isKindOfClass:NSDictionary.class]) continue;
+        id uri = entry[SGTrackURI];
+        if (![uri isKindOfClass:NSString.class]) continue;
+        id title = entry[SGTrackTitle];
+        id artist = entry[SGTrackArtist];
+        [clean addObject:@{SGTrackURI: uri,
+                           SGTrackTitle: [title isKindOfClass:NSString.class] ? title : @"",
+                           SGTrackArtist: [artist isKindOfClass:NSString.class] ? artist : @""}];
+    }
+    return clean;
 }
 
 static void save(NSArray<NSDictionary *> *list) {

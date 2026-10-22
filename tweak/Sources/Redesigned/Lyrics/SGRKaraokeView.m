@@ -1190,6 +1190,12 @@ typedef struct {
 
 - (void)dealloc {
     [NSNotificationCenter.defaultCenter removeObserver:self];
+    // The link retains the view while it runs, so this only matters on a
+    // path that lets the view go without leaving its window — but a
+    // pending startLink would fire on a dead view, and a live link would
+    // keep the view ticking at 120 Hz for good.
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(startLink) object:nil];
+    [_link invalidate];
     free(_spans);
     free(_breaks);
 }

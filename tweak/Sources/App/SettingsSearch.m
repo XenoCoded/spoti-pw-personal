@@ -163,8 +163,9 @@ static void indexActions(NSMutableArray<SGSearchEntry *> *entries, NSMutableSet<
             }
         });
     }
-    // Vinyl reads its switch live, so the palette can flip it with no restart.
-    add(@"Vinyl mode · Toggle", ^{
+    // Vinyl reads its switch live, so the palette can flip it with no
+    // restart — redesign only, where the player hook lives.
+    if (redesign) add(@"Vinyl mode · Toggle", ^{
         SGSetInt(SGKeyVinyl, !SGFlag(SGKeyVinyl, NO));
     });
 }

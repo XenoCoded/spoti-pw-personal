@@ -184,6 +184,72 @@ UIViewController *SGListeningStatsPage(void) {
             }
             [sections addObject:SGSection(@"Recently played", rows)];
         }
+        // Resurface (Batch 60): old flames — played at least three times
+        // but not heard in over a month. The aggregates already keep
+        // everything this needs (plays, lastPlayed); the section is just
+        // the question asked the other way round from Recently played.
+        NSTimeInterval now = NSDate.date.timeIntervalSince1970;
+        NSDateFormatter *dayOnly = [NSDateFormatter new];
+        dayOnly.dateFormat = @"MMM d";
+        NSMutableArray<NSDictionary *> *dormant = [NSMutableArray array];
+        for (NSString *uri in tracks) {
+            NSDictionary *stored = tracks[uri];
+            double last = [stored[@"lastPlayed"] doubleValue];
+            if (last > 0 && now - last > 30 * 86400 && [stored[@"plays"] integerValue] >= 3) {
+                NSMutableDictionary *entry = [stored mutableCopy];
+                entry[@"uri"] = uri;
+                [dormant addObject:entry];
+            }
+        }
+        [dormant sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+            NSComparisonResult byPlays = [b[@"plays"] compare:a[@"plays"]];
+            return byPlays != NSOrderedSame ? byPlays : [b[@"seconds"] compare:a[@"seconds"]];
+        }];
+        if (dormant.count) {
+            NSMutableArray<SGModRow *> *rows = [NSMutableArray array];
+            for (NSDictionary *entry in [dormant subarrayWithRange:NSMakeRange(0, MIN(dormant.count, 8))]) {
+                NSString *title = [entry[@"title"] length] ? entry[@"title"] : @"Unknown track";
+                NSString *detail = [NSString stringWithFormat:@"%@ plays · last heard %@",
+                    entry[@"plays"], [dayOnly stringFromDate:[NSDate dateWithTimeIntervalSince1970:[entry[@"lastPlayed"] doubleValue]]]];
+                NSString *uri = entry[@"uri"];
+                [rows addObject:SGStatActionRow(title, entry[@"artist"], ^NSString *{ return detail; }, ^{
+                    if (uri.length) SGOpenSpotifyURI([NSURL URLWithString:uri]);
+                })];
+            }
+            [sections addObject:SGSection(@"Resurface", rows)];
+        }
+        // New discoveries (Batch 60): first heard within the last week,
+        // on the firstPlayed stamp Batch 55 started keeping. Tracks from
+        // before the stamp have no first hearing to point at and stay out,
+        // the same bargain Recently played makes with lastPlayed.
+        NSMutableArray<NSDictionary *> *fresh = [NSMutableArray array];
+        for (NSString *uri in tracks) {
+            NSDictionary *stored = tracks[uri];
+            double first = [stored[@"firstPlayed"] doubleValue];
+            if (first > 0 && now - first < 7 * 86400) {
+                NSMutableDictionary *entry = [stored mutableCopy];
+                entry[@"uri"] = uri;
+                [fresh addObject:entry];
+            }
+        }
+        [fresh sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+            return [b[@"firstPlayed"] compare:a[@"firstPlayed"]];
+        }];
+        if (fresh.count) {
+            NSMutableArray<SGModRow *> *rows = [NSMutableArray array];
+            for (NSDictionary *entry in [fresh subarrayWithRange:NSMakeRange(0, MIN(fresh.count, 8))]) {
+                NSString *title = [entry[@"title"] length] ? entry[@"title"] : @"Unknown track";
+                NSDate *firstDate = [NSDate dateWithTimeIntervalSince1970:[entry[@"firstPlayed"] doubleValue]];
+                NSString *when = [NSCalendar.currentCalendar isDateInToday:firstDate]
+                    ? @"today" : [dayOnly stringFromDate:firstDate];
+                NSString *detail = [NSString stringWithFormat:@"First heard %@ · %@ plays", when, entry[@"plays"]];
+                NSString *uri = entry[@"uri"];
+                [rows addObject:SGStatActionRow(title, entry[@"artist"], ^NSString *{ return detail; }, ^{
+                    if (uri.length) SGOpenSpotifyURI([NSURL URLWithString:uri]);
+                })];
+            }
+            [sections addObject:SGSection(@"New discoveries", rows)];
+        }
         // The playback journal (Batch 55): every play as it happened, with
         // how much of it was heard — the diary under the aggregates. A play
         // heard to (nearly) its end says so; one abandoned inside half a
@@ -207,6 +273,41 @@ UIViewController *SGListeningStatsPage(void) {
                 })];
             }
             [sections addObject:SGSection(@"Playback journal", rows)];
+        }
+        // Listening clock (Batch 60): the journal binned by the hour each
+        // play started — when the listening actually happens. Ten plays is
+        // the floor for calling it a pattern. The top hour's name is kept
+        // for the text export below.
+        NSString *peakHourText = nil;
+        if (journal.count >= 10) {
+            double hourSeconds[24] = {0};
+            NSInteger hourPlays[24] = {0};
+            NSCalendar *calendar = NSCalendar.currentCalendar;
+            for (NSDictionary *play in journal) {
+                NSInteger hour = [calendar component:NSCalendarUnitHour
+                    fromDate:[NSDate dateWithTimeIntervalSince1970:[play[@"t"] doubleValue]]];
+                hourSeconds[hour] += [play[@"seconds"] doubleValue];
+                hourPlays[hour]++;
+            }
+            NSMutableArray<NSNumber *> *hours = [NSMutableArray array];
+            for (NSInteger hour = 0; hour < 24; hour++)
+                if (hourPlays[hour] > 0) [hours addObject:@(hour)];
+            [hours sortUsingComparator:^NSComparisonResult(NSNumber *a, NSNumber *b) {
+                return [@(hourSeconds[b.integerValue]) compare:@(hourSeconds[a.integerValue])];
+            }];
+            NSDateFormatter *hourFormat = [NSDateFormatter new];
+            hourFormat.dateFormat = @"h a";
+            NSMutableArray<SGModRow *> *rows = [NSMutableArray array];
+            for (NSNumber *boxed in [hours subarrayWithRange:NSMakeRange(0, MIN(hours.count, 3))]) {
+                NSInteger hour = boxed.integerValue;
+                NSDate *probe = [calendar dateBySettingHour:hour minute:0 second:0 ofDate:NSDate.date options:0];
+                NSString *label = probe ? [hourFormat stringFromDate:probe] : [NSString stringWithFormat:@"%ld:00", (long)hour];
+                NSString *detail = [NSString stringWithFormat:@"%@ heard · %ld plays",
+                    SGStatsFormatTime(hourSeconds[hour]), (long)hourPlays[hour]];
+                if (!peakHourText) peakHourText = label;
+                [rows addObject:SGStatRow(label, ^NSString *{ return detail; })];
+            }
+            if (rows.count) [sections addObject:SGSection(@"Listening clock", rows)];
         }
         NSArray<NSDictionary *> *songs = topTracks(snapshot, 10);
         if (songs.count) {
@@ -282,6 +383,7 @@ UIViewController *SGListeningStatsPage(void) {
             [lines addObject:[NSString stringWithFormat:@"Day streak: %ld days", (long)streak]];
             if (biggestKey) [lines addObject:[NSString stringWithFormat:@"Biggest day: %@", biggestText]];
             [lines addObject:[NSString stringWithFormat:@"Week over week: %@", wowText]];
+            if (peakHourText) [lines addObject:[NSString stringWithFormat:@"Peak hour: %@", peakHourText]];
             [lines addObject:[NSString stringWithFormat:@"Songs played: %ld", (long)plays]];
             [lines addObject:@""];
             [lines addObject:@"Top songs"];
@@ -301,6 +403,24 @@ UIViewController *SGListeningStatsPage(void) {
                 [lines addObject:@""];
                 [lines addObject:@"Recently played"];
                 for (NSDictionary *entry in [recent subarrayWithRange:NSMakeRange(0, MIN(recent.count, 8))]) {
+                    NSString *title = [entry[@"title"] length] ? entry[@"title"] : @"Unknown track";
+                    NSString *artist = [entry[@"artist"] length] ? [@" — " stringByAppendingString:entry[@"artist"]] : @"";
+                    [lines addObject:[NSString stringWithFormat:@"· %@%@", title, artist]];
+                }
+            }
+            if (dormant.count) {
+                [lines addObject:@""];
+                [lines addObject:@"Resurface"];
+                for (NSDictionary *entry in [dormant subarrayWithRange:NSMakeRange(0, MIN(dormant.count, 8))]) {
+                    NSString *title = [entry[@"title"] length] ? entry[@"title"] : @"Unknown track";
+                    NSString *artist = [entry[@"artist"] length] ? [@" — " stringByAppendingString:entry[@"artist"]] : @"";
+                    [lines addObject:[NSString stringWithFormat:@"· %@%@", title, artist]];
+                }
+            }
+            if (fresh.count) {
+                [lines addObject:@""];
+                [lines addObject:@"New discoveries"];
+                for (NSDictionary *entry in [fresh subarrayWithRange:NSMakeRange(0, MIN(fresh.count, 8))]) {
                     NSString *title = [entry[@"title"] length] ? entry[@"title"] : @"Unknown track";
                     NSString *artist = [entry[@"artist"] length] ? [@" — " stringByAppendingString:entry[@"artist"]] : @"";
                     [lines addObject:[NSString stringWithFormat:@"· %@%@", title, artist]];

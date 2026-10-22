@@ -62,7 +62,9 @@ static id artworkFor(NSString *artworkID, NSURL *file, UIImage *still) {
     // offer and the warm; the Canvas/Apple path never did — the still
     // (the clip's first frame) is the whole artwork instead.
     if (UIAccessibilityIsReduceMotionEnabled())
-        return still ? [[MPMediaItemArtwork alloc] initWithImage:still] : nil;
+        if (!still) return nil;
+        return [[MPMediaItemArtwork alloc] initWithBoundsSize:still.size
+            requestHandler:^UIImage *(CGSize size) { return still; }];
     if (@available(iOS 26.0, *)) {
         return [[MPMediaItemAnimatedArtwork alloc] initWithArtworkID:artworkID
             previewImageRequestHandler:^(CGSize size, void (^done)(UIImage *image)) {

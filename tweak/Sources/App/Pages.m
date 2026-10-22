@@ -4,6 +4,7 @@
 #import "Pages.h"
 #import "AppTint.h"
 #import "Shared/ArtistBlock/ArtistBlock.h"
+#import "Shared/TrackBin/TrackBin.h"
 #import "Shared/Gestures/Gestures.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/Lyrics/TVLyrics.h"
@@ -115,12 +116,17 @@ UIViewController *SGPlayerSettingsPage(void) {
     blocked.value = ^NSString *{
         return SGFlag(SGKeyArtistBlock, NO) ? @(SGBlockedArtists().count).stringValue : @"Off";
     };
+    SGModRow *bin = SGPageRow(@"Trash bin", ^UIViewController *{ return SGTrackBinSettingsPage(); });
+    bin.value = ^NSString *{
+        return SGFlag(SGKeyTrackBin, NO) ? @(SGBinnedTracks().count).stringValue : @"Off";
+    };
     SGModRow *stats = SGPageRow(@"Listening stats", ^UIViewController *{ return SGListeningStatsPage(); });
     stats.value = ^NSString *{ return SGListeningStatsSummary(); };
     BOOL native = !SGRedesignedUIStored();
 
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObject:SGSection(nil, @[
         SGWithSymbol(blocked, @"person.crop.circle.badge.xmark"),
+        SGWithSymbol(bin, @"trash"),
         SGWithSymbol(stats, @"chart.bar"),
     ])];
     NSMutableArray<SGModRow *> *pages = [NSMutableArray array];

@@ -13,10 +13,21 @@ static const NSUInteger kKeptClips = 60;
 // the cache is also held under a byte budget (Batch 21 audit).
 static const unsigned long long kKeptBytes = 120ULL * 1024 * 1024;
 // The key whose clip is on screen right now; pruning never takes it.
+// Written from the artwork path and read by the cache prune on the
+// writer's queue, so both sides hold the same small lock (Batch 89):
+// the unlocked strong-static assignment was the same shape as the
+// picker's painted-image race.
 static NSString *sg_protectedKey;
 
+static NSObject *sg_protectedLock(void) {
+    static NSObject *lock;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ lock = [NSObject new]; });
+    return lock;
+}
+
 void SGLyricClipSetProtected(NSString *key) {
-    sg_protectedKey = [key copy];
+    @synchronized (sg_protectedLock()) { sg_protectedKey = [key copy]; }
 }
 
 static dispatch_queue_t clipQueue(void) {
@@ -107,7 +118,9 @@ static void prune(void) {
         NSDate *db = [b resourceValuesForKeys:@[NSURLContentModificationDateKey] error:nil][NSURLContentModificationDateKey];
         return [da compare:db];
     }];
-    NSString *protectedName = sg_protectedKey ? [clipPath(sg_protectedKey) lastPathComponent] : nil;
+    NSString *protectedSnapshot;
+    @synchronized (sg_protectedLock()) { protectedSnapshot = sg_protectedKey; }
+    NSString *protectedName = protectedSnapshot ? [clipPath(protectedSnapshot) lastPathComponent] : nil;
     NSUInteger remaining = urls.count;
     for (NSURL *url in urls) {
         if (remaining <= kKeptClips && total <= kKeptBytes) break;

@@ -18,6 +18,19 @@ NSArray<NSString *> *SGLyricArtworkStyleNames(void) {
              @"Pulse bars", @"Warp flow", @"OLED stealth"];
 }
 
+// The thumbnails render one at a time on a serial queue (Batch 89): the
+// sample renderer serialises on its lock anyway, so a concurrent burst
+// bought nothing but contention — and, before the lock itself was fixed,
+// raced the state the renders share.
+static dispatch_queue_t SGSampleRenderQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("pw.spoti.lyricartwork.samples", DISPATCH_QUEUE_SERIAL);
+    });
+    return queue;
+}
+
 @interface SGLyricStylePage : SGPage
 @end
 
@@ -79,28 +92,32 @@ static NSInteger styleForRow(NSInteger section, NSInteger row) {
         thumb.layer.cornerRadius = 6;
         thumb.backgroundColor = [UIColor colorWithWhite:0.12 alpha:1];
         [cell.contentView addSubview:thumb];
-        // The room for the thumbnail comes out of the configuration's
-        // leading margin: the cell's textLabel is nil under the content
-        // configuration SGFillCell installed, and anchoring constraints to
-        // it put nil into an array literal, which crashed the picker as it
-        // opened.
-        UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
-        NSDirectionalEdgeInsets margins = content.directionalLayoutMargins;
-        margins.leading = 94;   // 14 margin + 66 thumbnail + 14 gap
-        content.directionalLayoutMargins = margins;
-        cell.contentConfiguration = content;
     }
+    // The room for the thumbnail comes out of the configuration's leading
+    // margin, on EVERY fill: SGFillCell installs a fresh configuration
+    // each time a cell is filled, so setting the margin only when the
+    // thumb is created leaves reused cells at the stock margin with the
+    // title slid back under the picture. (The Batch 87 crash lived here
+    // too: the cell's textLabel is nil under a content configuration,
+    // and the constraints that used to anchor to it put nil into an
+    // array literal.)
+    UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
+    NSDirectionalEdgeInsets margins = content.directionalLayoutMargins;
+    margins.leading = 94;   // 14 margin + 66 thumbnail + 14 gap
+    content.directionalLayoutMargins = margins;
+    cell.contentConfiguration = content;
     thumb.image = _thumbs[@(style)];
     if (!thumb.image) {
-        // Drawn off the main thread, dropped in when it lands if the cell is
-        // still showing this style.
+        // Drawn off the main thread, dropped in when it lands if the cell
+        // is still showing this style.
         NSIndexPath *here = [path copy];
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        dispatch_async(SGSampleRenderQueue(), ^{
             UIImage *image = SGLyricArtworkSample(style, CGSizeMake(198, 264));
             if (!image) return;
             dispatch_async(dispatch_get_main_queue(), ^{
                 _thumbs[@(style)] = image;
                 UITableViewCell *now = [table cellForRowAtIndexPath:here];
+                if (![[table indexPathForCell:now] isEqual:here]) return;
                 UIImageView *view = (UIImageView *)[now.contentView viewWithTag:77];
                 if (view) view.image = image;
             });

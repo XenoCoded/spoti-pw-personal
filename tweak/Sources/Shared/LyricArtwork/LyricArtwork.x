@@ -20,7 +20,20 @@
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/Player/PlayerState.h"
 
-static NSObject *sg_lock;
+// The one lock for this file's shared state — the offered artwork, the
+// cover, the sample cache. It used to be a plain static created inside
+// the %ctor, AFTER that constructor's launch-time flag gate: in any
+// session where lyric artwork was off at launch and switched on later,
+// the lock was never created, @synchronized (nil) silently did nothing,
+// and everything the lock was added to protect raced anyway — the
+// picker's concurrent sample renders above all. dispatch_once creates
+// it on first use, whichever path gets here first.
+static NSObject *sg_lockObject(void) {
+    static NSObject *lock;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ lock = [NSObject new]; });
+    return lock;
+}
 // The frame clock for clip renders: seconds into the line being drawn, or -1
 // when a still is being drawn and the player's own position rules.
 static double sg_frameTime = -1;
@@ -41,10 +54,11 @@ static void drawCoverFilled(UIImage *image, CGSize size) {
 
 #pragma mark - the Aura's colours (Batch 4)
 
-static CIContext *sg_ciContext;
 static CIContext *ciContext(void) {
-    if (!sg_ciContext) sg_ciContext = [CIContext contextWithOptions:nil];
-    return sg_ciContext;
+    static CIContext *context;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ context = [CIContext contextWithOptions:nil]; });
+    return context;
 }
 
 // A cover's frame, breathing (Batch 13): while a clip renders, the rect a
@@ -81,7 +95,9 @@ static UIImage *blurred(UIImage *image, CGFloat radius) {
     CIFilter *blur = [CIFilter filterWithName:@"CIGaussianBlur"];
     [blur setValue:input forKey:kCIInputImageKey];
     [blur setValue:@(radius) forKey:kCIInputRadiusKey];
-    CGImageRef cg = [ciContext() createCGImage:blur.outputImage
+    CIImage *blurredImage = blur.outputImage;
+    if (!blurredImage) return nil;
+    CGImageRef cg = [ciContext() createCGImage:blurredImage
                                       fromRect:CGRectMake(0, 0, image.size.width, image.size.height)];
     UIImage *result = cg ? [UIImage imageWithCGImage:cg] : nil;
     if (cg) CGImageRelease(cg);
@@ -471,7 +487,9 @@ static void fillRect(CGRect rect, UIColor *color) {
 
 static UIImage *ciResult(UIImage *image, CIFilter *filter) {
     if (!image.CGImage || !filter) return nil;
-    CGImageRef cg = [ciContext() createCGImage:filter.outputImage
+    CIImage *output = filter.outputImage;
+    if (!output) return nil;
+    CGImageRef cg = [ciContext() createCGImage:output
                                       fromRect:CGRectMake(0, 0, image.size.width, image.size.height)];
     UIImage *result = cg ? [UIImage imageWithCGImage:cg] : nil;
     if (cg) CGImageRelease(cg);
@@ -1306,8 +1324,14 @@ static UIImage *halftoneOf(UIImage *cover) {
     [dots setValue:[CIImage imageWithCGImage:cover.CGImage] forKey:kCIInputImageKey];
     [dots setValue:@(6.0) forKey:@"inputWidth"];
     [dots setValue:@(0.75) forKey:@"inputSharpness"];
-    memo = ciResult(cover, dots);
-    memoFor = cover.CGImage;
+    UIImage *fresh = ciResult(cover, dots);
+    // The key is retained (Batch 89): an unretained CGImageRef dangles the
+    // moment its bitmap goes, and a new bitmap at the same address would
+    // have been served the dead one's halftone.
+    CGImageRef key = CGImageRetain(cover.CGImage);
+    if (memoFor) CGImageRelease(memoFor);
+    memoFor = key;
+    memo = fresh;
     return memo;
 }
 
@@ -1826,7 +1850,7 @@ static UIImage *drawClipFrame(NSInteger style, CGSize size, NSString *prev, NSSt
                               NSInteger index, NSInteger count, NSInteger prevStart, NSInteger nextStart,
                               double duration, double t) {
     UIImage *image;
-    @synchronized (sg_lock) {
+    @synchronized (sg_lockObject()) {
         sg_frameTime = t;
         if (style == SGLyricArtworkRecord) {
             image = drawRecordArtwork(size, prev, current, next, coverImage, line, title, artist);
@@ -1885,7 +1909,7 @@ static void offerClip(NSString *lineKey, NSInteger style, SGKaraokeLine *line,
         id clip = clipArtworkFor(clipKey, file, still);
         if (!clip) return;
         SGLyricClipSetProtected(clipKey);
-        @synchronized (sg_lock) { sg_clipArtwork = clip; }
+        @synchronized (sg_lockObject()) { sg_clipArtwork = clip; }
         SGLog(@"lyric artwork: clip up for %@", clipKey);
         resend();
     };
@@ -1897,7 +1921,10 @@ static void offerClip(NSString *lineKey, NSInteger style, SGKaraokeLine *line,
     CGSize specSize;
     NSInteger specFps;
     clipSpec(&specSize, &specFps);
-    UIImage *coverImage = cover ? [cover imageWithSize:specSize] : nil;
+    // The same artwork object the sample path reads under the lock: its
+    // request handler is not promised reentrant, so the reads serialise.
+    UIImage *coverImage;
+    @synchronized (sg_lockObject()) { coverImage = cover ? [cover imageWithSize:specSize] : nil; }
     SGLyricClipRender(clipKey, specSize, specFps, clipSeconds(style, line), YES,
         ^UIImage *(double t) {
             return drawClipFrame(style, specSize, prev, current, next, coverImage, line,
@@ -1930,7 +1957,9 @@ static void warmClips(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSInte
         NSString *clipKey = [NSString stringWithFormat:@"%@/%ld-%ld-%ld", trackID, (long)j, (long)style,
                              (long)effectiveQuality()];
         if (SGLyricClipCachedFile(clipKey)) continue;
-        if (!coverImage) coverImage = cover ? [cover imageWithSize:specSize] : nil;
+        if (!coverImage) {
+            @synchronized (sg_lockObject()) { coverImage = cover ? [cover imageWithSize:specSize] : nil; }
+        }
         NSString *jPrev = j > 0 ? SGKaraokeLineText(lines[j - 1]) : @"";
         NSString *jCurrent = SGKaraokeLineText(lines[j]);
         NSString *jNext = j + 1 < (NSInteger)lines.count ? SGKaraokeLineText(lines[j + 1]) : @"";
@@ -1951,13 +1980,13 @@ static void warmClips(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSInte
 // feature's own hook below puts the still in on the way out.
 static void resend(void) {
     NSDictionary *info;
-    @synchronized (sg_lock) { info = sg_info; }
+    @synchronized (sg_lockObject()) { info = sg_info; }
     if (info.count) MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = info;
 }
 
 UIImage *SGLyricArtworkCurrentCard(void) {
     MPMediaItemArtwork *artwork;
-    @synchronized (sg_lock) { artwork = sg_artwork; }
+    @synchronized (sg_lockObject()) { artwork = sg_artwork; }
     return artwork ? [artwork imageWithSize:CGSizeMake(900, 1200)] : nil;
 }
 
@@ -2020,17 +2049,9 @@ static void tick(void) {
     }
     NSInteger position = SGKaraokePositionMs();
     NSInteger index = SGKaraokeLeadLine(lines, position);
-    NSString *key = [NSString stringWithFormat:@"%@/%ld", trackID, (long)index];
-    if ([key isEqualToString:sg_lineKey]) return;
-    sg_lineKey = key;
-
-    NSString *current = index >= 0 ? SGKaraokeLineText(lines[index]) : @"♪";
-    NSString *prev = index > 0 ? SGKaraokeLineText(lines[index - 1]) : @"";
-    NSString *next = index + 1 < (NSInteger)lines.count ? SGKaraokeLineText(lines[index + 1]) : @"";
-    SGKaraokeLine *line = index >= 0 ? lines[index] : nil;
-    id<SPTPlayer> player = SGKaraokePlayer();
-    SPTPlayerTrack *track = player.state.track;
-    NSString *title = track.trackTitle ?: @"", *artist = track.artistName ?: @"";
+    // The style is part of the change key (Batch 89): it used to be read
+    // only after the key check, so picking a new style changed nothing
+    // on the lock screen until the next lyric line arrived.
     NSInteger style = SGInt(SGKeyLyricArtworkStyle, SGLyricArtworkAura);
     // Shuffle styles (Batch 31): one roll per track, kept for the track's
     // whole run, so a session tours the shelf instead of living in one
@@ -2045,6 +2066,17 @@ static void tick(void) {
         }
         style = rolled;
     }
+    NSString *key = [NSString stringWithFormat:@"%@/%ld/%ld", trackID, (long)index, (long)style];
+    if ([key isEqualToString:sg_lineKey]) return;
+    sg_lineKey = key;
+
+    NSString *current = index >= 0 ? SGKaraokeLineText(lines[index]) : @"♪";
+    NSString *prev = index > 0 ? SGKaraokeLineText(lines[index - 1]) : @"";
+    NSString *next = index + 1 < (NSInteger)lines.count ? SGKaraokeLineText(lines[index + 1]) : @"";
+    SGKaraokeLine *line = index >= 0 ? lines[index] : nil;
+    id<SPTPlayer> player = SGKaraokePlayer();
+    SPTPlayerTrack *track = player.state.track;
+    NSString *title = track.trackTitle ?: @"", *artist = track.artistName ?: @"";
     // The Workshop styles' facts: where this line sits in the song, its
     // neighbours' starts, and how long the track runs.
     NSInteger lineIndex = MAX(index, 0), lineCount = lines.count;
@@ -2052,10 +2084,10 @@ static void tick(void) {
     NSInteger nextStart = index + 1 < (NSInteger)lines.count ? lines[index + 1].start : 0;
     double duration = [player.state respondsToSelector:@selector(duration)] ? player.state.duration : 0;
     MPMediaItemArtwork *cover;
-    @synchronized (sg_lock) { cover = sg_cover; }
+    @synchronized (sg_lockObject()) { cover = sg_cover; }
     sg_artwork = [[MPMediaItemArtwork alloc] initWithBoundsSize:CGSizeMake(900, 1200)
         requestHandler:^UIImage *(CGSize size) {
-            @synchronized (sg_lock) {
+            @synchronized (sg_lockObject()) {
                 UIImage *coverImage = cover ? [cover imageWithSize:size] : nil;
                 if (style == SGLyricArtworkRecord) {
                     return drawRecordArtwork(size, prev, current, next, coverImage, line, title, artist);
@@ -2081,34 +2113,46 @@ static void tick(void) {
 // playing track's cover when one has been seen, else a painted stand-in — a
 // violet-to-amber gradient with a soft disc of light, song-shaped enough for
 // every style to show what it does.
+// The painted stand-in, drawn once: it used to live in a bare static in
+// sampleCover below, checked and stored with no lock at all while the
+// picker fired a render per visible cell at once. On a launch where no
+// cover had been seen yet, every one of those threads took the painted
+// path and raced the strong static's assignment — an over-release
+// waiting for the picker's first open (Batch 89).
+static UIImage *paintedCover(void) {
+    static UIImage *painted;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+        format.scale = 1;
+        format.opaque = YES;
+        painted = [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(600, 600) format:format]
+            imageWithActions:^(UIGraphicsImageRendererContext *context) {
+            CGContextRef ctx = context.CGContext;
+            CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+            NSArray *colors = @[(id)[UIColor colorWithRed:0.16 green:0.08 blue:0.35 alpha:1].CGColor,
+                                (id)[UIColor colorWithRed:0.85 green:0.35 blue:0.15 alpha:1].CGColor];
+            CGGradientRef gradient = CGGradientCreateWithColors(space, (__bridge CFArrayRef)colors, NULL);
+            CGContextDrawLinearGradient(ctx, gradient, CGPointMake(0, 0), CGPointMake(600, 600), 0);
+            CGGradientRelease(gradient);
+            CGColorSpaceRelease(space);
+            [[UIColor colorWithWhite:1 alpha:0.85] setFill];
+            [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(190, 140, 220, 220)] fill];
+            [[UIColor colorWithWhite:0 alpha:0.75] setFill];
+            UIRectFill(CGRectMake(0, 470, 600, 130));
+        }];
+    });
+    return painted;
+}
+
 static UIImage *sampleCover(CGSize size) {
-    @synchronized (sg_lock) {
+    @synchronized (sg_lockObject()) {
         if (sg_cover) {
             UIImage *real = [sg_cover imageWithSize:CGSizeMake(600, 600)];
             if (real) return real;
         }
     }
-    static UIImage *painted;
-    if (painted) return painted;
-    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
-    format.scale = 1;
-    format.opaque = YES;
-    painted = [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(600, 600) format:format]
-        imageWithActions:^(UIGraphicsImageRendererContext *context) {
-        CGContextRef ctx = context.CGContext;
-        CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-        NSArray *colors = @[(id)[UIColor colorWithRed:0.16 green:0.08 blue:0.35 alpha:1].CGColor,
-                            (id)[UIColor colorWithRed:0.85 green:0.35 blue:0.15 alpha:1].CGColor];
-        CGGradientRef gradient = CGGradientCreateWithColors(space, (__bridge CFArrayRef)colors, NULL);
-        CGContextDrawLinearGradient(ctx, gradient, CGPointMake(0, 0), CGPointMake(600, 600), 0);
-        CGGradientRelease(gradient);
-        CGColorSpaceRelease(space);
-        [[UIColor colorWithWhite:1 alpha:0.85] setFill];
-        [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(190, 140, 220, 220)] fill];
-        [[UIColor colorWithWhite:0 alpha:0.75] setFill];
-        UIRectFill(CGRectMake(0, 470, 600, 130));
-    }];
-    return painted;
+    return paintedCover();
 }
 
 UIImage *SGLyricArtworkSample(NSInteger style, CGSize size) {
@@ -2117,14 +2161,17 @@ UIImage *SGLyricArtworkSample(NSInteger style, CGSize size) {
     static NSMutableDictionary<NSString *, UIImage *> *cache;
     static MPMediaItemArtwork *cacheCover;
     MPMediaItemArtwork *coverNow;
-    @synchronized (sg_lock) { coverNow = sg_cover; }
+    @synchronized (sg_lockObject()) { coverNow = sg_cover; }
     // The picker asks for its thumbnails from a concurrent queue, one per
     // cell, so the cache's check, reset and store all sit under the same
     // lock as the draw: outside it, two cells could grow the dictionary at
     // once.
     NSString *cacheKey = [NSString stringWithFormat:@"%ld@%.0fx%.0f", (long)style, size.width, size.height];
-    @synchronized (sg_lock) {
-        if (cacheCover != coverNow) {
+    @synchronized (sg_lockObject()) {
+        // With no cover seen yet both sides of the old test were nil, so
+        // the dictionary was never created and every store below silently
+        // did nothing — the whole shelf re-rendered on every open.
+        if (!cache || cacheCover != coverNow) {
             cache = [NSMutableDictionary dictionary];
             cacheCover = coverNow;
         }
@@ -2137,7 +2184,7 @@ UIImage *SGLyricArtworkSample(NSInteger style, CGSize size) {
     NSString *artist = @"The Night Drivers";
     UIImage *cover = sampleCover(size);
     UIImage *drawn;
-    @synchronized (sg_lock) {
+    @synchronized (sg_lockObject()) {
         if (style == SGLyricArtworkRecord) {
             drawn = drawRecordArtwork(size, prev, current, next, cover, nil, title, artist);
         } else if (style == SGLyricArtworkChat) {
@@ -2150,7 +2197,7 @@ UIImage *SGLyricArtworkSample(NSInteger style, CGSize size) {
         }
     }
     if (drawn) {
-        @synchronized (sg_lock) { cache[cacheKey] = drawn; }
+        @synchronized (sg_lockObject()) { cache[cacheKey] = drawn; }
     }
     return drawn;
 }
@@ -2159,7 +2206,7 @@ UIImage *SGLyricArtworkSample(NSInteger style, CGSize size) {
 - (void)setNowPlayingInfo:(NSDictionary *)info {
     MPMediaItemArtwork *artwork;
     id clip;
-    @synchronized (sg_lock) {
+    @synchronized (sg_lockObject()) {
         id theirs = info[MPMediaItemPropertyArtwork];
         if (theirs && theirs != sg_artwork) sg_cover = theirs;
         sg_info = info;
@@ -2188,7 +2235,6 @@ UIImage *SGLyricArtworkSample(NSInteger style, CGSize size) {
 
 %ctor {
     if (!SGFlag(SGKeyLyricArtwork, NO)) return;
-    sg_lock = [NSObject new];
     dispatch_async(dispatch_get_main_queue(), ^{
         NSTimer *timer = [NSTimer timerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) { tick(); }];
         [NSRunLoop.mainRunLoop addTimer:timer forMode:NSRunLoopCommonModes];

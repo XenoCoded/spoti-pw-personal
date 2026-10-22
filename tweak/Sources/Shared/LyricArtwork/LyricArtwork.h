@@ -43,6 +43,12 @@ typedef NS_ENUM(NSInteger, SGLyricArtworkStyle) {
     SGLyricArtworkPolaroid,
     SGLyricArtworkSubtitles,
     SGLyricArtworkLineNumber,
+    // The second research wave (Batch 81): Pulse bars is the waveform
+    // card, Warp flow is the cover's colours in motion, OLED stealth
+    // is the all-black whisper for always-on lock screens.
+    SGLyricArtworkPulseBars,
+    SGLyricArtworkWarpFlow,
+    SGLyricArtworkOLEDStealth,
 };
 
 @class SGModRow;

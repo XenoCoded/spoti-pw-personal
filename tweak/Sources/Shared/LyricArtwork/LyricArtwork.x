@@ -1513,6 +1513,113 @@ static void drawLineNumber(SGWCtx *c) {
     fillRect(CGRectMake(margin, y, width * fraction, 3), c->accent ?: ink);
 }
 
+// The second research wave (Batch 81): three more original renderers,
+// same SGWCtx contract as the Batch 7 set.
+
+// Pulse bars: the current line over a fake waveform — seeded per track so
+// the still is stable, and the bars breathe while a clip renders.
+static void drawPulseBars(SGWCtx *c) {
+    CGSize size = c->size;
+    fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithWhite:0.045 alpha:1]);
+    CGFloat margin = size.width * 0.07, width = size.width - 2 * margin;
+    UIFont *nowFont = [UIFont boldSystemFontOfSize:size.height * 0.040];
+    CGFloat y = size.height * 0.10;
+    drawText(c->title, CGRectMake(margin, y, width, size.height * 0.05),
+             [UIFont boldSystemFontOfSize:size.height * 0.022], [UIColor colorWithWhite:0.85 alpha:1], NSTextAlignmentLeft);
+    drawText(c->artist, CGRectMake(margin, y + size.height * 0.032, width, size.height * 0.05),
+             [UIFont systemFontOfSize:size.height * 0.020], [UIColor colorWithWhite:0.55 alpha:1], NSTextAlignmentLeft);
+    y = size.height * 0.24;
+    drawText(c->current, CGRectMake(margin, y, width, size.height * 0.16), nowFont,
+             UIColor.whiteColor, NSTextAlignmentLeft);
+    y += textHeight(c->current, nowFont, width) + size.height * 0.012;
+    drawText(c->next, CGRectMake(margin, y, width, size.height * 0.06),
+             [UIFont systemFontOfSize:size.height * 0.024], [UIColor colorWithWhite:0.5 alpha:1], NSTextAlignmentLeft);
+    // The waveform field: bars seeded from the title so every still of a
+    // track looks the same; clips add a slow sine so they pulse.
+    seedRand(c->title ?: c->current ?: @"x");
+    NSInteger bars = 36;
+    CGFloat gap = 2, barW = (width - gap * (bars - 1)) / bars;
+    CGFloat fieldY = size.height * 0.58, fieldH = size.height * 0.32;
+    double bases[36];
+    for (NSInteger i = 0; i < bars; i++) bases[i] = 0.15 + nextRand() * 0.7;
+    UIColor *barColor = c->accent ?: [UIColor colorWithRed:0.11 green:0.73 blue:0.33 alpha:1];
+    for (NSInteger i = 0; i < bars; i++) {
+        double h = bases[i];
+        if (sg_frameTime >= 0) h = 0.15 + 0.7 * (0.5 + 0.5 * sin(sg_frameTime * 2.4 + i * 0.65 + bases[i] * 4));
+        CGFloat bh = fieldH * h;
+        fillRect(CGRectMake(margin + i * (barW + gap), fieldY + (fieldH - bh) / 2, barW, bh), barColor);
+    }
+}
+
+// Warp flow: the cover's colours poured down the card in bands, a bright
+// band drifting through them while a clip renders, the line held on a
+// scrim so it stays readable.
+static void drawWarpFlow(SGWCtx *c) {
+    CGSize size = c->size;
+    UIColor *avg = c->average ?: [UIColor colorWithRed:0.11 green:0.73 blue:0.33 alpha:1];
+    CGFloat r, g, b, a;
+    [avg getRed:&r green:&g blue:&b alpha:&a];
+    NSInteger bands = 28;
+    for (NSInteger i = 0; i < bands; i++) {
+        CGFloat t = i / (CGFloat)(bands - 1);
+        // Each band is the cover colour walking to black, so the flow
+        // reads as light spilling downward.
+        UIColor *band = [UIColor colorWithRed:r * (1 - t * 0.85) green:g * (1 - t * 0.85)
+                                         blue:b * (1 - t * 0.85) alpha:1];
+        fillRect(CGRectMake(0, i * size.height / bands, size.width, size.height / bands + 1), band);
+    }
+    if (sg_frameTime >= 0) {
+        // One bright band drifting down the card on a slow loop.
+        CGFloat travel = fmod(sg_frameTime * size.height * 0.22, size.height * 1.3);
+        CGFloat bandY = travel - size.height * 0.15;
+        fillRect(CGRectMake(0, bandY, size.width, size.height * 0.09),
+                 [UIColor colorWithWhite:1 alpha:0.10]);
+    }
+    fillRect(CGRectMake(0, size.height * 0.55, size.width, size.height * 0.45),
+             [UIColor colorWithWhite:0 alpha:0.55]);
+    CGFloat margin = size.width * 0.07, width = size.width - 2 * margin;
+    UIFont *nowFont = [UIFont boldSystemFontOfSize:size.height * 0.042];
+    CGFloat y = size.height * 0.60;
+    drawText(c->current, CGRectMake(margin, y, width, size.height * 0.18), nowFont,
+             UIColor.whiteColor, NSTextAlignmentLeft);
+    y += textHeight(c->current, nowFont, width) + size.height * 0.012;
+    drawText(c->next, CGRectMake(margin, y, width, size.height * 0.06),
+             [UIFont systemFontOfSize:size.height * 0.024], [UIColor colorWithWhite:0.75 alpha:1], NSTextAlignmentLeft);
+    drawText([NSString stringWithFormat:@"%@ — %@", c->title ?: @"", c->artist ?: @""],
+             CGRectMake(margin, size.height * 0.925, width, size.height * 0.05),
+             [UIFont systemFontOfSize:size.height * 0.020], [UIColor colorWithWhite:0.8 alpha:1], NSTextAlignmentLeft);
+}
+
+// OLED stealth: pure black, small type, nothing to burn in — the quiet
+// card for always-on lock screens.
+static void drawOLEDStealth(SGWCtx *c) {
+    CGSize size = c->size;
+    fillRect(CGRectMake(0, 0, size.width, size.height), UIColor.blackColor);
+    CGFloat margin = size.width * 0.08, width = size.width - 2 * margin;
+    drawText(c->title, CGRectMake(margin, size.height * 0.06, width, size.height * 0.05),
+             [UIFont systemFontOfSize:size.height * 0.022], [UIColor colorWithWhite:0.55 alpha:1], NSTextAlignmentLeft);
+    drawText(c->artist, CGRectMake(margin, size.height * 0.092, width, size.height * 0.05),
+             [UIFont systemFontOfSize:size.height * 0.020], [UIColor colorWithWhite:0.38 alpha:1], NSTextAlignmentLeft);
+    UIFont *nowFont = [UIFont boldSystemFontOfSize:size.height * 0.038];
+    CGFloat y = size.height * 0.38;
+    drawText(c->current, CGRectMake(margin, y, width, size.height * 0.16), nowFont,
+             c->accent ?: UIColor.whiteColor, NSTextAlignmentLeft);
+    y += textHeight(c->current, nowFont, width) + size.height * 0.014;
+    drawText(c->next, CGRectMake(margin, y, width, size.height * 0.06),
+             [UIFont systemFontOfSize:size.height * 0.023], [UIColor colorWithWhite:0.42 alpha:1], NSTextAlignmentLeft);
+    // A hairline of progress, barely there.
+    double fraction = 0;
+    if (c->duration > 0) {
+        NSInteger position = sg_frameTime >= 0 && c->line
+            ? c->line.start + (NSInteger)(sg_frameTime * 1000) : SGKaraokePositionMs();
+        fraction = position >= 0 ? MIN(1, position / 1000.0 / c->duration) : 0;
+    } else if (c->count > 0) {
+        fraction = (c->index + 1) / (double)c->count;
+    }
+    fillRect(CGRectMake(margin, size.height * 0.90, width, 1.5), [UIColor colorWithWhite:1 alpha:0.14]);
+    fillRect(CGRectMake(margin, size.height * 0.90, width * fraction, 1.5), c->accent ?: [UIColor colorWithWhite:0.7 alpha:1]);
+}
+
 static UIImage *drawWorkshopArtwork(NSInteger style, CGSize size, NSString *prev, NSString *current, NSString *next,
                                     UIImage *cover, SGKaraokeLine *line, NSString *title, NSString *artist,
                                     NSInteger index, NSInteger count, NSInteger prevStart, NSInteger nextStart,
@@ -1546,6 +1653,9 @@ static UIImage *drawWorkshopArtwork(NSInteger style, CGSize size, NSString *prev
             case SGLyricArtworkPolaroid: drawPolaroid(&c); break;
             case SGLyricArtworkSubtitles: drawSubtitles(&c); break;
             case SGLyricArtworkLineNumber: drawLineNumber(&c); break;
+            case SGLyricArtworkPulseBars: drawPulseBars(&c); break;
+            case SGLyricArtworkWarpFlow: drawWarpFlow(&c); break;
+            case SGLyricArtworkOLEDStealth: drawOLEDStealth(&c); break;
             default: fillRect(CGRectMake(0, 0, size.width, size.height), UIColor.blackColor); break;
         }
     }];
@@ -1694,6 +1804,9 @@ static BOOL styleAnimates(NSInteger style) {
         case SGLyricArtworkDuotone:
         case SGLyricArtworkGigPoster:
         case SGLyricArtworkPrint:
+        case SGLyricArtworkPulseBars:
+        case SGLyricArtworkWarpFlow:
+        case SGLyricArtworkOLEDStealth:
             return YES;
         default:
             return NO;

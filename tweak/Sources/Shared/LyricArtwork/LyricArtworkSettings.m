@@ -14,7 +14,8 @@ NSArray<NSString *> *SGLyricArtworkStyleNames(void) {
              @"Twitter", @"Cover in letters", @"Magazine", @"Duotone", @"Word collage",
              @"Cyberpunk chat", @"Old TV", @"Matrix", @"Stickers", @"Receipt",
              @"Gig poster", @"Holo", @"RGB split", @"Window", @"Starburst", @"Print",
-             @"Tiles", @"Polaroid", @"Subtitles", @"Line number"];
+             @"Tiles", @"Polaroid", @"Subtitles", @"Line number",
+             @"Pulse bars", @"Warp flow", @"OLED stealth"];
 }
 
 @interface SGLyricStylePage : SGPage

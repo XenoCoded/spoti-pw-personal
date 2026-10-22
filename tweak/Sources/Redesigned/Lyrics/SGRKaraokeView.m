@@ -35,6 +35,9 @@ static const CGFloat kExtrasSide = 44, kExtrasBottom = 12, kExtrasGlyph = 17, kE
 static const NSTimeInterval kRestyleFade = 0.3;   // the lines crossfading to a new style
 static const NSTimeInterval kBrowseHold = 3;   // after scrolling by hand, how long until it follows the song again
 static const double kFloatMinMs = 700, kFloatLeadMs = 80;   // a short word still floats up this slowly
+// The other ways the word being sung stands out (Batch 61): grow's held swell, pop's held share
+// and its overshoot bump, and the glow highlight's full-strength alpha behind the word.
+static const CGFloat kGrowPeak = 0.16, kPopHold = 0.08, kPopBump = 0.22, kGlowAlpha = 0.38;
 // A line lit whole: how long its words take to come up to full white, and to float up together.
 static const NSTimeInterval kWholeFade = 0.35;
 static const double kWholeRiseMs = 900;
@@ -132,7 +135,10 @@ static UILabel *wordLabel(NSString *text, UIFont *font, UIColor *color, CGRect f
 
 @implementation SGRKaraokeWordView {
     CAGradientLayer *_fill;
-    CGFloat _filled, _lift;
+    CGFloat _filled, _emphasisValue;
+    NSInteger _emphasis;   // the Lyrics page's word style, read as the word is laid out
+    CGFloat _strength;     // the emphasis choice as a multiplier: 0.5, 1 or 1.6
+    UIView *_halo;         // the glow style's highlight, behind the word; nil for the others
     BOOL _rightToLeft;
 }
 
@@ -150,6 +156,18 @@ static UILabel *wordLabel(NSString *text, UIFont *font, UIColor *color, CGRect f
     // mask leaves nothing of it, and a song has hundreds of words waiting their turn.
     _lit.hidden = YES;
     [self addSubview:_lit];
+    // How this word stands out when it is sung (Batch 61), read once as the
+    // word is laid out: the frame-by-frame floatAt: does no settings work.
+    _emphasis = SGInt(SGRKeyLyricsWordStyle, 0);
+    NSInteger intensity = SGInt(SGRKeyLyricsWordIntensity, 1);
+    _strength = intensity <= 0 ? 0.5 : intensity == 1 ? 1.0 : 1.6;
+    if (_emphasis == 3) {
+        _halo = [[UIView alloc] initWithFrame:CGRectInset(self.bounds, -4, -1)];
+        _halo.backgroundColor = UIColor.whiteColor;
+        _halo.layer.cornerRadius = self.bounds.size.height * 0.22;
+        _halo.alpha = 0;
+        [self insertSubview:_halo atIndex:0];
+    }
 
     CGFloat width = self.bounds.size.width + kFillEdge;
     _fill = [CAGradientLayer layer];
@@ -178,19 +196,46 @@ static UILabel *wordLabel(NSString *text, UIFont *font, UIColor *color, CGRect f
     [CATransaction commit];
 }
 
-// Rises like a critically damped spring let go as the word starts: no jolt, a long soft landing.
-// x = 5 at the end of the word is 96 % of the way up.
+// Stands out like a critically damped spring let go as the word starts: no jolt, a long soft
+// landing. x = 5 at the end of the word is 96 % of the way there. The spring's progress drives
+// whichever style the Lyrics page chose (Batch 61): float rides it as a rise, grow as a held
+// swell, pop adds a bump of overshoot early in the word on top of a smaller hold, and glow
+// blooms the highlight behind the word. The rise is monotonic in x, so an unchanged rise means
+// an unchanged frame and the word is left alone.
 - (void)floatAt:(double)ms {
     double x = MAX(0, ms - _riseStart + kFloatLeadMs) / MAX(_riseEnd - _riseStart, kFloatMinMs) * 5;
-    CGFloat lift = kLift * (1 - (1 + x) * exp(-x));
-    if (lift == _lift) return;
-    _lift = lift;
-    self.transform = CGAffineTransformMakeTranslation(0, -lift);
+    CGFloat rise = (CGFloat)(1 - (1 + x) * exp(-x));
+    if (rise == _emphasisValue) return;
+    _emphasisValue = rise;
+    switch (_emphasis) {
+        case 1: {
+            CGFloat scale = 1 + kGrowPeak * rise * _strength;
+            self.transform = CGAffineTransformMakeScale(scale, scale);
+            break;
+        }
+        case 2: {
+            double bump = exp(-(x - 1.1) * (x - 1.1) / 0.6);
+            CGFloat scale = 1 + (CGFloat)(kPopHold * rise + kPopBump * bump) * _strength;
+            self.transform = CGAffineTransformMakeScale(scale, scale);
+            break;
+        }
+        case 3: {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            _halo.alpha = MIN(kGlowAlpha * _strength * rise, 0.6);
+            [CATransaction commit];
+            break;
+        }
+        default:
+            self.transform = CGAffineTransformMakeTranslation(0, -kLift * rise * _strength);
+            break;
+    }
 }
 
 - (void)settle {
-    _lift = 0;
+    _emphasisValue = 0;
     self.transform = CGAffineTransformIdentity;
+    if (_halo) _halo.alpha = 0;
 }
 
 @end

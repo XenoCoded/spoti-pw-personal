@@ -94,6 +94,46 @@ SGModRow *SGRLandscapeLyricsRow(void) {
         SGRKeyLandscapeLyrics);
 }
 
+// The word being sung, and how hard it stands out (Batch 61): two pickers
+// over the same action-sheet idiom as the star ratings. Choosing posts the
+// text-did-change notice, and the lyrics view restyles the song at once —
+// these two are live, no restart, no waiting for the next track.
+static void pickWordSetting(NSString *title, NSString *key, NSArray<NSString *> *names) {
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:title message:nil
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSInteger i = 0; i < (NSInteger)names.count; i++) {
+        NSInteger choice = i;
+        [sheet addAction:[UIAlertAction actionWithTitle:names[i] style:UIAlertActionStyleDefault
+            handler:^(UIAlertAction *action) {
+                SGSetInt(key, choice);
+                [NSNotificationCenter.defaultCenter postNotificationName:SGRLyricsTextDidChangeNotification object:nil];
+            }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [SGTopController() presentViewController:sheet animated:YES completion:nil];
+}
+
+static NSString *wordSettingName(NSString *key, NSArray<NSString *> *names, NSInteger fallback) {
+    NSInteger value = SGInt(key, fallback);
+    return names[(NSUInteger)MIN(MAX(value, 0), (NSInteger)names.count - 1)];
+}
+
+SGModRow *SGRLyricsWordStyleRow(void) {
+    NSArray<NSString *> *names = @[@"Float", @"Grow", @"Pop", @"Glow"];
+    return SGStatActionRow(@"Current word style",
+        @"How the word being sung stands out from its line: rises, swells, pops, or lights up behind.",
+        ^NSString *{ return wordSettingName(SGRKeyLyricsWordStyle, names, 0); },
+        ^{ pickWordSetting(@"Current word style", SGRKeyLyricsWordStyle, names); });
+}
+
+SGModRow *SGRLyricsWordIntensityRow(void) {
+    NSArray<NSString *> *names = @[@"Gentle", @"Normal", @"Bold"];
+    return SGStatActionRow(@"Word emphasis",
+        @"How far the current word's style goes.",
+        ^NSString *{ return wordSettingName(SGRKeyLyricsWordIntensity, names, 1); },
+        ^{ pickWordSetting(@"Word emphasis", SGRKeyLyricsWordIntensity, names); });
+}
+
 SGModRow *SGRLyricsTextSizesRow(void) {
     return SGPageRow(@"Text sizes", ^UIViewController *{ return [SGRLyricsTextPage new]; });
 }

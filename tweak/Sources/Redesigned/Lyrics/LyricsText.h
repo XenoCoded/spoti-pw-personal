@@ -17,6 +17,12 @@ typedef NS_ENUM(NSInteger, SGRLyricsText) {
 #define SGRKeyLyricsTextOrder @"spotifyglass.redesign.lyricsTextOrder"
 // Turned sideways, the lyrics share the screen with the cover (Batch 24).
 #define SGRKeyLandscapeLyrics @"spotifyglass.redesign.landscapeLyrics"
+// How the word being sung stands out, and how hard it stands out (Batch 61): the styles are
+// float (rise as it starts), grow (swell to a held size), pop (an overshoot as the word lands)
+// and glow (a highlight blooming behind it); the emphasis is gentle, normal or bold. The words
+// read both as they are laid out, so a change restyles the song on the spot.
+#define SGRKeyLyricsWordStyle @"spotifyglass.redesign.lyricsWordStyle"
+#define SGRKeyLyricsWordIntensity @"spotifyglass.redesign.lyricsWordIntensity"
 
 // Posted on the main queue when either switch or the order changes.
 extern NSNotificationName const SGRLyricsTextDidChangeNotification;
@@ -32,3 +38,6 @@ void SGRSetLyricsTextShown(SGRLyricsText text, BOOL shown);
 SGModRow *SGRLyricsTextSizesRow(void);
 // The landscape lyrics switch, for the Lyrics page's Display section.
 SGModRow *SGRLandscapeLyricsRow(void);
+// The word style and emphasis rows (Batch 61), for the same section.
+SGModRow *SGRLyricsWordStyleRow(void);
+SGModRow *SGRLyricsWordIntensityRow(void);

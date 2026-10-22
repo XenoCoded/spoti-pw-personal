@@ -9,6 +9,7 @@
 #import "Shared/LyricsMeanings/Meanings.h"
 #import "Shared/Player/PlayerSettings.h"
 #import "Shared/Player/SleepTimer.h"
+#import "Shared/Player/HeadGestures.h"
 #import "Shared/Player/ABRepeat.h"
 #import "Shared/Player/Bookmark.h"
 #import "Shared/Player/Ratings.h"
@@ -132,6 +133,7 @@ UIViewController *SGPlayerSettingsPage(void) {
     // Vibrations hook Spotify's own controls and its audio, so they answer under either look.
     [sections addObjectsFromArray:SGVibrationsSections()];
     [sections addObject:SGSection(@"Sleep", SGSleepTimerRows())];
+    [sections addObject:SGSection(@"Head gestures", SGHeadGestureRows())];
     [sections addObject:SGSection(@"Repeat", SGABRepeatRows())];
     [sections addObject:SGSection(@"Rating", SGRatingsRows())];
     [sections addObject:SGSection(@"Bookmarks", SGBookmarkRows())];

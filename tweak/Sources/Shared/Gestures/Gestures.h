@@ -65,6 +65,11 @@ UIViewController *SGGesturesSettingsPage(void);
 // for a look that answers the gesture (the redesign's haptics). Main thread.
 void SGGestureSetObserver(void (^observer)(SGGestureAction action));
 
+// Performs an action the way a cell of the grid would, observer and all (Batch 66): another
+// sense asking for the same deed — the AirPods head gestures — goes through here, so a nod
+// does exactly what the grid's cell does.
+void SGGesturePerform(SGGestureAction action);
+
 // Puts the double tap on `host`, the view the player's grid covers, while the switch is on; again on
 // every layout pass of the host, so taps Spotify adds later still wait for it. Main thread.
 void SGGestureAttach(UIView *host);

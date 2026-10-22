@@ -202,6 +202,10 @@ void SGGestureAttach(UIView *host) {
 
 #pragma mark - hooks
 
+void SGGesturePerform(SGGestureAction action) {
+    perform(action);
+}
+
 %hook SPTNowPlayingPlaybackControllerImplementation
 - (id)initWithPlayer:(id)player testManager:(id)manager inStreamClient:(id)client {
     id controller = %orig;

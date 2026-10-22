@@ -20,6 +20,12 @@ static NSArray<SGOrderItem *> *sources(void) {
     ];
 }
 
+SGModRow *SGLockScreenPriorityRow(void) {
+    return SGChoiceRow(@"Lock screen priority",
+        @"When the lyric artwork and a Canvas or animated cover both want the lock screen, this one wins. Album cover is Spotify's own look, untouched by either.",
+        SGKeyLockScreenPriority, @[@"Lyric art", @"Canvas & animated covers", @"Album cover"], 0);
+}
+
 NSArray<SGModRow *> *SGAnimatedArtworkRows(void) {
     if (!SGAnimatedArtworkAvailable())
         return @[SGStatActionRow(@"Animated lock screen", nil, ^NSString *{ return @"Needs iOS 26"; }, ^{ sayWhatIsMissing(); })];

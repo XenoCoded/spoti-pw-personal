@@ -6,6 +6,16 @@
 
 #define SGKeyLockScreenArtwork @"spotifyglass.lockscreen.animatedartwork"
 #define SGKeyLockScreenArtworkSources @"spotifyglass.lockscreen.artworksources"
+#define SGKeyLockScreenPriority @"spotifyglass.lockscreen.priority"
+
+// Which artwork owns the lock screen when more than one wants it (Batch 65), chosen on the
+// Lock screen page and read live by both artwork hooks: 0 the fork's lyric art first (a Canvas
+// counts as off while lyric artwork is on), 1 a Canvas or animated cover first (the lyric art
+// keeps the still, the clip is the Canvas's), 2 the plain album cover, Spotify's own look.
+NSInteger SGLockScreenPriority(void);
+// The Lock screen page's row for the choice above.
+@class SGModRow;
+SGModRow *SGLockScreenPriorityRow(void);
 
 // Where a clip can come from: the track's Canvas, or the album's animated cover on Apple Music.
 extern NSString *const SGArtworkSourceSpotify;

@@ -184,9 +184,15 @@ static BOOL keyOffered(void) {
 }
 
 static void resolve(SPTPlayerTrack *track) {
-    // Read on every track, so the switch needs no restart. Lyric artwork (the fork's
-    // stills) takes the artwork slot while it is on, so this counts as off then too.
-    if (!SGFlag(SGKeyLockScreenArtwork, YES) || SGFlag(SGKeyLyricArtwork, NO)) {
+    // Read on every track, so the switch needs no restart. Who owns the
+    // lock screen is the Lock screen page's priority choice (Batch 65),
+    // not a rule baked in here: lyric art first (the default) counts this
+    // as off while lyric artwork is on, exactly as it always has; Canvas
+    // first stands its ground and takes the animated slot, leaving the
+    // lyric art its still; the plain cover counts this as off always.
+    NSInteger priority = SGLockScreenPriority();
+    BOOL yields = priority == 2 || (priority == 0 && SGFlag(SGKeyLyricArtwork, NO));
+    if (!SGFlag(SGKeyLockScreenArtwork, YES) || yields) {
         if (sg_wanted) {
             sg_wanted = nil;
             SGArtworkCancelFetch();

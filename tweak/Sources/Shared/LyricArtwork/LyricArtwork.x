@@ -2045,13 +2045,18 @@ UIImage *SGLyricArtworkSample(NSInteger style, CGSize size) {
         artwork = sg_artwork;
         clip = sg_clipArtwork;
     }
+    // The lock screen priority (Batch 65), the Lock screen page's choice:
+    // the plain cover winning means this hook changes nothing at all; a
+    // Canvas winning means the still stays the lyric art's but the
+    // animated slot is the Canvas's, so the clip stays home.
+    NSInteger priority = SGLockScreenPriority();
     NSDictionary *shown = info;
-    if (artwork && shown[MPMediaItemPropertyArtwork] != artwork) {
+    if (priority != 2 && artwork && shown[MPMediaItemPropertyArtwork] != artwork) {
         NSMutableDictionary *swapped = [shown mutableCopy];
         swapped[MPMediaItemPropertyArtwork] = artwork;
         shown = swapped;
     }
-    if (clip) {
+    if (priority == 0 && clip) {
         static NSString *animatedKey;
         if (!animatedKey) animatedKey = SGAnimatedArtworkKey(NULL);
         shown = SGArtworkInInfo(shown, clip, animatedKey);

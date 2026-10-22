@@ -17,8 +17,11 @@ UIViewController *SGLockScreenSettingsPage(void) {
     if (@available(iOS 17.0, *)) {
         [sections addObject:SGSection(@"Live Activity", SGLiveActivityRows())];
     }
-    [sections addObject:SGSection(@"Artwork", [[SGAnimatedArtworkRows() arrayByAddingObjectsFromArray:SGLyricArtworkRows()]
-        arrayByAddingObject:SGFlagRow(@"Companion content", @"ios-feature-lockscreen.companion_content_enabled")])];
+    NSMutableArray<SGModRow *> *artworkRows = [NSMutableArray arrayWithObject:SGLockScreenPriorityRow()];
+    [artworkRows addObjectsFromArray:SGAnimatedArtworkRows()];
+    [artworkRows addObjectsFromArray:SGLyricArtworkRows()];
+    [artworkRows addObject:SGFlagRow(@"Companion content", @"ios-feature-lockscreen.companion_content_enabled")];
+    [sections addObject:SGSection(@"Artwork", artworkRows)];
     [sections addObject:SGSection(@"Storage", @[
         SGStatActionRow(@"Animated clips", @"Rendered lyric clips kept on the phone. They render again if cleared.",
             ^NSString *{ return [NSByteCountFormatter stringFromByteCount:(long long)SGLyricClipCacheBytes() countStyle:NSByteCountFormatterCountStyleFile]; },

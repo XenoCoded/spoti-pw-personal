@@ -6,6 +6,11 @@
 NSString *const SGArtworkSourceSpotify = @"spotify";
 NSString *const SGArtworkSourceApple = @"applemusic";
 
+NSInteger SGLockScreenPriority(void) {
+    NSInteger value = [NSUserDefaults.standardUserDefaults integerForKey:SGKeyLockScreenPriority];
+    return MIN(MAX(value, 0), 2);
+}
+
 NSArray<NSString *> *SGArtworkOrder(void) {
     id stored = [NSUserDefaults.standardUserDefaults arrayForKey:SGKeyLockScreenArtworkSources];
     NSArray *keys = [stored isKindOfClass:NSArray.class] ? stored : @[SGArtworkSourceSpotify, SGArtworkSourceApple];

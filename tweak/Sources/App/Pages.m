@@ -6,6 +6,7 @@
 #import "Shared/ArtistBlock/ArtistBlock.h"
 #import "Shared/Gestures/Gestures.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/Lyrics/TVLyrics.h"
 #import "Shared/LyricsMeanings/Meanings.h"
 #import "Shared/Player/PlayerSettings.h"
 #import "Shared/Player/SleepTimer.h"
@@ -99,6 +100,7 @@ static UIViewController *lyricsPage(void) {
         [sections addObject:SGSection(@"Display", @[SGLyricsWordTimingRow(), SGRLyricsWordStyleRow(), SGRLyricsWordIntensityRow(), SGRLyricsTextSizesRow(), SGLyricsTranslationLanguageRow(), SGLyricsMeaningsRow(), SGRLandscapeLyricsRow(), SGRLandscapePaneRow(), SGRLandscapeSwapRow(), SGRLandscapeShareRow()])];
     }
     [sections addObject:SGSection(nil, more)];
+    [sections addObject:SGSection(@"Big screen", @[SGTVLyricsRow()])];
     return [[SGModPage alloc] initWithTitle:@"Lyrics" intro:SGRestartNote sections:sections footer:nil];
 }
 

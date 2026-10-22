@@ -43,7 +43,7 @@ static NSString *const kMixIdentifier = @"ListPlatform.ToolbarActions.MixButton"
 // takes the sheet's side margin and row height rather than the Kit's tokens, as Speed and pitch does.
 static const CGFloat kRowHeight = 56, kSideMargin = 16, kGlyphSide = 24, kGlyphGap = 16;
 
-static char kToolbarKey, kSortKey, kBlockKey, kDecidedKey;
+static char kToolbarKey, kSortKey, kBlockKey, kDecidedKey, kFindKey;
 
 #pragma mark - Spotify's pills
 
@@ -125,6 +125,14 @@ static void pillsIn(UIView *toolbar, UIView **sort, UIView **mix) {
 void SGRPlaylistTakeSort(UIView *page, UIView *button) {
     if (page && button && objc_getAssociatedObject(page, &kSortKey) != button) {
         objc_setAssociatedObject(page, &kSortKey, button, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+}
+
+// The find field, held the same way: the toolbar it sits in is only on
+// screen while the page is pulled down, and the sheet is opened at rest.
+void SGRPlaylistTakeFind(UIView *page, UIView *field) {
+    if (page && field && objc_getAssociatedObject(page, &kFindKey) != field) {
+        objc_setAssociatedObject(page, &kFindKey, field, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 }
 
@@ -213,19 +221,20 @@ void SGRPlaylistTakeCuration(UIView *cell) {
 
 @interface SGRMenuBlock : UIView
 @property (nonatomic, weak) UIViewController *menu;
-- (void)showSort:(UIView *)sort mix:(UIView *)mix;
+- (void)showSort:(UIView *)sort mix:(UIView *)mix find:(UIView *)find;
 - (CGFloat)wantedHeight;
 @end
 
 @implementation SGRMenuBlock {
-    SGRMenuRow *_sort, *_mix;
+    SGRMenuRow *_find, *_sort, *_mix;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
+    _find = [[SGRMenuRow alloc] initWithFrame:CGRectZero];
     _sort = [[SGRMenuRow alloc] initWithFrame:CGRectZero];
     _mix = [[SGRMenuRow alloc] initWithFrame:CGRectZero];
-    for (SGRMenuRow *row in @[_sort, _mix]) {
+    for (SGRMenuRow *row in @[_find, _sort, _mix]) {
         row.hidden = YES;
         [row addTarget:self action:@selector(sgr_rowTapped:) forControlEvents:UIControlEventTouchUpInside];
         [self addSubview:row];
@@ -234,13 +243,20 @@ void SGRPlaylistTakeCuration(UIView *cell) {
 }
 
 // The glyphs are the system's rather than Spotify's: Encore draws its own into a view of its own, and a
-// copy of one is a snapshot to keep right, where these two say the same thing on every build. The words
+// copy of one is a snapshot to keep right, where these say the same thing on every build. The words
 // stay Spotify's, so the rows are in the app's language.
-- (void)showSort:(UIView *)sort mix:(UIView *)mix {
+- (void)showSort:(UIView *)sort mix:(UIView *)mix find:(UIView *)find {
+    _find.pill = find;
     _sort.pill = sort;
     _mix.pill = mix;
+    // Find's word is the field's own label where it has one — it names the
+    // page it opens in the app's language — and the Music app's words
+    // where it has none.
+    if (find) [_find showWord:find.accessibilityLabel.length ? find.accessibilityLabel : @"Find in playlist"
+                       symbol:@"magnifyingglass"];
     if (sort) [_sort showWord:pillWord(sort) symbol:@"arrow.up.arrow.down"];
     if (mix) [_mix showWord:pillWord(mix) symbol:@"slider.horizontal.3"];
+    _find.hidden = find == nil;
     _sort.hidden = sort == nil;
     _mix.hidden = mix == nil;
     [self setNeedsLayout];
@@ -248,14 +264,14 @@ void SGRPlaylistTakeCuration(UIView *cell) {
 
 - (CGFloat)wantedHeight {
     CGFloat height = 0;
-    for (SGRMenuRow *row in @[_sort, _mix]) height += row.hidden ? 0 : kRowHeight;
+    for (SGRMenuRow *row in @[_find, _sort, _mix]) height += row.hidden ? 0 : kRowHeight;
     return height;
 }
 
 - (void)layoutSubviews {
     [super layoutSubviews];
     CGFloat y = 0;
-    for (SGRMenuRow *row in @[_sort, _mix]) {
+    for (SGRMenuRow *row in @[_find, _sort, _mix]) {
         if (row.hidden) continue;
         row.frame = CGRectMake(0, y, self.bounds.size.width, kRowHeight);
         y += kRowHeight;
@@ -352,7 +368,7 @@ static void install(UIViewController *menu) {
     UIView *sort = nil, *mix = nil;
     pillsIn(objc_getAssociatedObject(page, &kToolbarKey), &sort, &mix);
     sort = objc_getAssociatedObject(page, &kSortKey) ?: sort;
-    [block showSort:sort mix:mix];
+    [block showSort:sort mix:mix find:objc_getAssociatedObject(page, &kFindKey)];
     // Nothing to show yet is not an answer: the page fills in as it lays out, and the next pass is asked
     // again rather than the sheet being written off.
     CGFloat height = [block wantedHeight];

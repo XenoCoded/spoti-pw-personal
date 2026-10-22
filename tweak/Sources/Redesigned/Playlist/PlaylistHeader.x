@@ -417,6 +417,11 @@ static void applyToolbar(UIView *headerRoot) {
     if (!toolbar) return;
     UIView *field = SGRFindByIdentifier(toolbar, @"Components.Header.UI.Toolbar.SearchField", &kFieldKey);
     glassUp(field, &kFieldGlassKey);
+    // The field is the page's to keep (PlaylistMenu.x): the ⋯ sheet's Find
+    // in playlist row fires it, the way the sheet's Sort fires the button
+    // below — the tap that opens Spotify's find page, from a menu that is
+    // there at rest instead of a toolbar that needs a pull down.
+    if (field) SGRPlaylistTakeFind(SGRPlaylistPageOf(headerRoot), field);
     glassUp(SGRFindByIdentifier(toolbar, @"Components.Header.UI.Toolbar.ButtonContainer", &kSortBoxKey), &kSortGlassKey);
     static BOOL logged;
     if (!logged && field.window) {

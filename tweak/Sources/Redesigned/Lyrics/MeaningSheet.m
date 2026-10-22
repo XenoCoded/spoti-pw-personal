@@ -147,7 +147,12 @@ static NSString *authorSymbol(SGLyricsMeaningAuthor author) {
 
 - (void)openGenius {
     NSURL *url = [NSURL URLWithString:_meanings[_index].url];
-    if (url) [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];
+    // The URL is the Genius API's word, not ours (Batch 93): only web
+    // schemes open, so a hostile or broken response cannot hide a
+    // tel: or app link behind the Genius button.
+    NSString *scheme = url.scheme.lowercaseString;
+    if ([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"])
+        [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];
 }
 
 @end

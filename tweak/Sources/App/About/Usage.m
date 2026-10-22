@@ -21,9 +21,12 @@ static NSString *const kInstall = @"spotipw.install";
 static NSString *const kAsked = @"spotipw.asked";
 
 // Not SGEnabled: after a reset that reads every unset switch as off, and this is not one of them.
+// Personal fork (Batch 93): upstream defaults this ON with no switch
+// anywhere in its settings; here it defaults OFF and the Updates page
+// carries the row, so sending anything is a choice the user made.
 static BOOL usageOn(void) {
     id stored = [NSUserDefaults.standardUserDefaults objectForKey:SGKeyUsage];
-    return stored ? [stored boolValue] : YES;
+    return stored ? [stored boolValue] : NO;
 }
 
 // Asked on every return to the front, so the formatter is made once.

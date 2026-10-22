@@ -34,10 +34,19 @@ private func sgEntry() -> SGWidgetEntry {
     entry.title = suite.string(forKey: "sg.title") ?? ""
     entry.artist = suite.string(forKey: "sg.artist") ?? ""
     entry.line = suite.string(forKey: "sg.line") ?? ""
-    entry.playsToday = suite.integer(forKey: "sg.playsToday")
-    entry.minutesToday = suite.integer(forKey: "sg.minutesToday")
-    entry.streak = suite.integer(forKey: "sg.streak")
-    entry.topTitle = suite.string(forKey: "sg.topTitle") ?? ""
+    // The day stamp (Batch 93): after a kill, a reboot or midnight the
+    // suite still holds the last write, and its "today" may be another
+    // day's. Stats from a different day read as zero, not as today's.
+    let dayFormat = DateFormatter()
+    dayFormat.locale = Locale(identifier: "en_US_POSIX")
+    dayFormat.calendar = Calendar(identifier: .gregorian)
+    dayFormat.dateFormat = "yyyy-MM-dd"
+    if suite.string(forKey: "sg.day") == dayFormat.string(from: Date()) {
+        entry.playsToday = suite.integer(forKey: "sg.playsToday")
+        entry.minutesToday = suite.integer(forKey: "sg.minutesToday")
+        entry.streak = suite.integer(forKey: "sg.streak")
+        entry.topTitle = suite.string(forKey: "sg.topTitle") ?? ""
+    }
     if let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: sgSuiteName) {
         let file = container.appendingPathComponent("sg-cover.jpg")
         if let data = try? Data(contentsOf: file) {

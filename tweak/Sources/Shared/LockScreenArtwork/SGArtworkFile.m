@@ -1,4 +1,5 @@
 #import <AVFoundation/AVFoundation.h>
+#include <string.h>
 #import "Core/SGCore.h"
 #import "SGArtworkFile.h"
 
@@ -43,8 +44,10 @@ static void prune(void) {
     }];
     for (NSURL *file in oldest) {
         if (total <= kCap) break;
-        total -= [[file resourceValuesForKeys:wanted error:nil][NSURLFileSizeKey] unsignedLongLongValue];
-        [files removeItemAtURL:file error:nil];
+        // Subtract only what was actually removed (Batch 93), the
+        // clip cache's prune had the same habit.
+        unsigned long long size = [[file resourceValuesForKeys:wanted error:nil][NSURLFileSizeKey] unsignedLongLongValue];
+        if ([files removeItemAtURL:file error:nil]) total -= size;
     }
     SGLog(@"lock artwork: cache pruned to %llu KB", total / 1024);
 }
@@ -87,6 +90,25 @@ void SGArtworkFetch(NSString *identifier, NSString *address, void (^done)(NSURL 
             return;
         }
         long long length = response.expectedContentLength;
+        // What lands here is trusted by existence alone from then on
+        // (Batch 93): an HTTP error page or a sign-in wall used to be
+        // moved in as the "video" and poison the identifier for good.
+        // An MP4 carries ftyp at bytes 4-8; anything else never moves.
+        if ([response isKindOfClass:NSHTTPURLResponse.class]
+            && ((NSHTTPURLResponse *)response).statusCode != 200) {
+            finish(done, nil, [NSString stringWithFormat:@"download failed: HTTP %ld",
+                                (long)((NSHTTPURLResponse *)response).statusCode]);
+            return;
+        }
+        NSFileHandle *handle = [NSFileHandle fileHandleForReadingFromURL:temporary error:nil];
+        NSData *head = [handle readDataOfLength:8];
+        [handle closeFile];
+        BOOL isVideo = head.length >= 8
+            && memcmp((const char *)head.bytes + 4, "ftyp", 4) == 0;
+        if (!isVideo) {
+            finish(done, nil, @"download was not a video");
+            return;
+        }
         dispatch_async(queue(), ^{
             NSError *move = nil;
             [NSFileManager.defaultManager removeItemAtURL:local error:nil];
@@ -144,13 +166,23 @@ static void crop(AVURLAsset *asset, AVAssetTrack *track, NSURL *into, CGFloat as
         done(nil, @"no exporter");
         return;
     }
-    export.outputURL = into;
+    // Exported beside the destination and moved in on success
+    // (Batch 93): a failed crop used to leave its partial AT the
+    // final name, where existence alone made it the cached answer.
+    NSURL *partial = [into.URLByDeletingPathExtension URLByAppendingPathExtension:@"partial.mp4"];
+    [NSFileManager.defaultManager removeItemAtURL:partial error:nil];
+    export.outputURL = partial;
     export.outputFileType = AVFileTypeMPEG4;
     export.videoComposition = composition;
     [export exportAsynchronouslyWithCompletionHandler:^{
         BOOL ok = export.status == AVAssetExportSessionStatusCompleted;
         dispatch_async(queue(), ^{
+            if (ok) {
+                [NSFileManager.defaultManager removeItemAtURL:into error:nil];
+                ok = [NSFileManager.defaultManager moveItemAtURL:partial toURL:into error:nil];
+            }
             if (ok) prune();
+            else [NSFileManager.defaultManager removeItemAtURL:partial error:nil];
             done(ok ? into : nil, ok ? [NSString stringWithFormat:@"cropped to %.0fx%.0f", render.width, render.height]
                                      : [NSString stringWithFormat:@"crop failed: %@", export.error.localizedDescription]);
         });

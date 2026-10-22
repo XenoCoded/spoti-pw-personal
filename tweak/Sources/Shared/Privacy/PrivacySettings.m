@@ -36,11 +36,22 @@ static SGModSection *countersSection(void) {
     return SGSection(@"Telemetry blocked so far", counts);
 }
 
+static SGModRow *usageRow(void) {
+    SGModRow *row = SGSwitchRow(@"Share anonymous usage",
+        @"Once a day, tells spoti.pw this install exists: the mod, Spotify and iOS versions, the device, the look, and which big switches are on. Nothing about the account or what is played.",
+        @"spotipw.usage");
+    row.defaultOn = NO;
+    return row;
+}
+
 // The switches first and what they have stopped last, so the counters bury no setting.
 UIViewController *SGPrivacySettingsPage(void) {
     return [[SGModPage alloc] initWithTitle:@"Privacy & clutter" intro:SGRestartNote sections:@[
         SGSection(@"Privacy", @[
             SGWithSymbol(SGSwitchRow(@"Block telemetry", @"Spotify's own events still go out, since Recents is built from them", SGKeyBlockTelemetry), @"antenna.radiowaves.left.and.right.slash"),
+            // The mod's own count (Batch 93): upstream sends it daily
+            // with no switch anywhere; this build defaults it off.
+            SGWithSymbol(usageRow(), @"person.2.slash"),
         ]),
         SGSection(@"Clutter", @[
             SGWithSymbol(SGOptionRow(@"Hide the video carousel in Search", nil, SGKeyHideSearchVideos), @"play.rectangle.on.rectangle"),

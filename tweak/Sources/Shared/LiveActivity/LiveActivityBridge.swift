@@ -44,6 +44,21 @@ public final class SGLiveActivityBridge: NSObject {
             if case .update(let id, _) = change, case .update(let waiting, _)? = pending.changes.last, waiting == id {
                 pending.changes.removeLast()
             }
+            // An update that arrives after an end was queued for the same
+            // activity is the newer word (Batch 93): a quick resume used
+            // to queue its update behind the pending end, the end landed,
+            // and the update then looked up a dead id and vanished — the
+            // card stayed gone until the app was opened. The end gives
+            // way for that id; ends for other ids stand.
+            if case .update(let id, _) = change {
+                pending.changes = pending.changes.compactMap { waiting in
+                    if case .end(var ids) = waiting, ids.contains(id) {
+                        ids.removeAll { $0 == id }
+                        return ids.isEmpty ? nil : Change.end(ids)
+                    }
+                    return waiting
+                }
+            }
             pending.changes.append(change)
             if pending.sending { return false }
             pending.sending = true

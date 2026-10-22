@@ -75,5 +75,5 @@ UIViewController *SGQueueVaultPage(void) {
     SGModRow *clear = SGActionRow(@"Clear the vault", nil, ^{ confirmClearVault(); });
     clear.color = SGRed();
     [sections addObject:SGSection(nil, @[clear])];
-    return [[SGModPage alloc] initWithTitle:@"Queue vault" intro:SGRestartNote sections:sections footer:nil];
+    return [[SGModPage alloc] initWithTitle:@"Queue vault" intro:nil sections:sections footer:nil];
 }

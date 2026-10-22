@@ -63,6 +63,7 @@ static NSArray<NSDictionary *> *topArtists(NSDictionary *snapshot, NSUInteger li
 // "2 min" the totals use.
 static NSString *clockTime(NSTimeInterval seconds) {
     NSInteger total = (NSInteger)seconds;
+    if (total < 0) total = 0;   // a planted negative read as "-1:-1" (Batch 93)
     if (total >= 3600) return [NSString stringWithFormat:@"%ld:%02ld:%02ld",
         (long)(total / 3600), (long)((total % 3600) / 60), (long)(total % 60)];
     return [NSString stringWithFormat:@"%ld:%02ld", (long)(total / 60), (long)(total % 60)];
@@ -97,6 +98,8 @@ UIViewController *SGListeningStatsPage(void) {
         // tracker keeps (Batch 31). Stores from before the buckets read 0.
         NSDictionary *days = [snapshot[@"days"] isKindOfClass:NSDictionary.class] ? snapshot[@"days"] : @{};
         NSDateFormatter *dayFormat = [NSDateFormatter new];
+        dayFormat.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+        dayFormat.calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
         dayFormat.dateFormat = @"yyyy-MM-dd";
         double todaySeconds = [days[[dayFormat stringFromDate:NSDate.date]] doubleValue];
         NSDictionary *daysPlays = [snapshot[@"daysPlays"] isKindOfClass:NSDictionary.class] ? snapshot[@"daysPlays"] : @{};
@@ -626,7 +629,7 @@ UIViewController *SGListeningStatsPage(void) {
         clear.color = SGRed();
         [sections addObject:SGSection(nil, @[chart, heatmap, export, clear])];
     }
-    return [[SGModPage alloc] initWithTitle:@"Listening stats" intro:SGRestartNote sections:sections footer:nil];
+    return [[SGModPage alloc] initWithTitle:@"Listening stats" intro:nil sections:sections footer:nil];
 }
 
 NSString *SGListeningStatsSummary(void) {

@@ -12,6 +12,13 @@ UIVisualEffect *SGGlassEffect(void) {
 
 static UIVisualEffectView *newPane(void) {
     UIVisualEffectView *glass = [[UIVisualEffectView alloc] initWithEffect:SGGlassEffect()];
+    // Reduce Transparency (Batch 93): the redesigned kit swaps the
+    // whole pane for a solid shape; this shared stack's callers hold
+    // the pane as an effect view, so the pane gets a near-opaque
+    // backing under its effect instead — the blur stops showing
+    // whatever is behind the pane.
+    if (UIAccessibilityIsReduceTransparencyEnabled())
+        glass.backgroundColor = [UIColor colorWithWhite:0.09 alpha:0.97];
     glass.userInteractionEnabled = NO;
     // A pane goes in at index 0, but a host that rebuilds its content puts that in at index 0 too
     // and the pane would end up over it. Depth keeps a pane behind whatever the host draws.

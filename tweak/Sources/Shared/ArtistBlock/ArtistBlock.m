@@ -8,7 +8,17 @@ static const NSInteger kMaxCredits = 32;
 
 NSArray<NSDictionary *> *SGBlockedArtists(void) {
     NSArray *list = [NSUserDefaults.standardUserDefaults arrayForKey:SGKeyArtistBlockList];
-    return list ?: @[];
+    // Only well-shaped entries come back (Batch 93): the store can be
+    // planted by a restored backup, and the consumers subscript every
+    // element for its uri — a non-dictionary element threw there.
+    NSMutableArray<NSDictionary *> *clean = [NSMutableArray array];
+    for (id entry in list) {
+        if (![entry isKindOfClass:NSDictionary.class]) continue;
+        if (![entry[SGArtistURI] isKindOfClass:NSString.class]) continue;
+        if (entry[SGArtistName] && ![entry[SGArtistName] isKindOfClass:NSString.class]) continue;
+        [clean addObject:entry];
+    }
+    return clean;
 }
 
 static void save(NSArray<NSDictionary *> *list) {

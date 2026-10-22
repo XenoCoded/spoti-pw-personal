@@ -9,4 +9,8 @@ public class SGWidgetReload: NSObject {
         WidgetCenter.shared.reloadTimelines(ofKind: "SGNowPlayingWidget")
         WidgetCenter.shared.reloadTimelines(ofKind: "SGStatsWidget")
     }
+
+    @objc public static func reloadNowPlaying() {
+        WidgetCenter.shared.reloadTimelines(ofKind: "SGNowPlayingWidget")
+    }
 }

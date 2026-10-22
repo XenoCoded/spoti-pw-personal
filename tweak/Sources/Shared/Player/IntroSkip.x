@@ -38,9 +38,33 @@ static void check(void) {
     SGLog(@"intro skip: %@ to %.1fs", track, mark.doubleValue);
 }
 
+// The timer exists only while a mark does (Batch 93): with no intros
+// stored, the old shape woke twice a second forever to read an empty
+// dictionary. Marks are written to defaults, and every write posts
+// NSUserDefaultsDidChangeNotification — the watcher follows the store,
+// so a mark set mid-session arms the timer on the spot, exactly as
+// before, and clearing the last mark puts it down.
+static NSTimer *sg_timer;
+
+static void refreshTimer(void) {
+    NSDictionary *intros = [NSUserDefaults.standardUserDefaults dictionaryForKey:SGKeyIntros];
+    BOOL armed = [intros isKindOfClass:NSDictionary.class] && intros.count > 0;
+    if (armed && !sg_timer) {
+        sg_timer = [NSTimer timerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *timer) { check(); }];
+        [NSRunLoop.mainRunLoop addTimer:sg_timer forMode:NSRunLoopCommonModes];
+    } else if (!armed && sg_timer) {
+        [sg_timer invalidate];
+        sg_timer = nil;
+    }
+}
+
 %ctor {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *timer) { check(); }];
+        refreshTimer();
+        [NSNotificationCenter.defaultCenter
+            addObserverForName:NSUserDefaultsDidChangeNotification object:nil
+                         queue:NSOperationQueue.mainQueue
+                    usingBlock:^(NSNotification *note) { refreshTimer(); }];
     });
     SGLog(@"intro skip: watching");
 }

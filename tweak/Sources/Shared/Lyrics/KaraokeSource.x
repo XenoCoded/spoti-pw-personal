@@ -223,7 +223,12 @@ NSString *SGKaraokePlayingTrack(void) {
 NSInteger SGKaraokePositionMs(void) {
     SPTPlayerState *state = playerState();
     if (!state) return -1;
-    return (NSInteger)((state.isPaused ? state.positionAsOfTimestamp : state.position) * 1000);
+    double seconds = state.isPaused ? state.positionAsOfTimestamp : state.position;
+    // A non-finite or negative position (a state mid-teardown, an
+    // episode without one) casts to garbage (Batch 93); unknown is -1,
+    // the value every caller already handles.
+    if (!isfinite(seconds) || seconds < 0) return -1;
+    return (NSInteger)(seconds * 1000);
 }
 
 void SGKaraokeSeek(NSInteger ms) {

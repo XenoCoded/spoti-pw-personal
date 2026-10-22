@@ -64,6 +64,7 @@ NSArray<NSString *> *SGQuickAccessTitles(void) {
 
 static NSArray<SGSearchEntry *> *sg_index;
 static BOOL sg_indexing;
+static BOOL sg_indexLook;
 
 static void indexPage(NSMutableArray<SGSearchEntry *> *entries, NSMutableSet<NSString *> *seen,
                       NSString *pageTitle, UIViewController *(^build)(void), NSInteger depth) {
@@ -87,6 +88,10 @@ static void indexPage(NSMutableArray<SGSearchEntry *> *entries, NSMutableSet<NSS
             }
         }
         for (SGModRow *row in section.rows) {
+            // A row hidden in the current state is not indexed
+            // (Batch 93): the jump looks among the page's SHOWN rows,
+            // so its result used to open the page and land nowhere.
+            if (row.visible && !row.visible()) continue;
             NSString *stamp = [pageTitle stringByAppendingFormat:@"\n%@", row.title];
             if (![seen containsObject:stamp]) {
                 [seen addObject:stamp];
@@ -171,7 +176,12 @@ static void indexActions(NSMutableArray<SGSearchEntry *> *entries, NSMutableSet<
 }
 
 static NSArray<SGSearchEntry *> *searchIndex(void) {
-    if (sg_index) return sg_index;
+    // Rebuilt when the look flips under it (Batch 93): the pages are
+    // built from the stored look, so an index made under the old look
+    // offered its rows and missed the new look's until a restart.
+    BOOL redesign = SGRedesignedUIStored();
+    if (sg_index && redesign == sg_indexLook) return sg_index;
+    sg_indexLook = redesign;
     sg_indexing = YES;
     NSMutableArray<SGSearchEntry *> *entries = [NSMutableArray array];
     NSMutableSet<NSString *> *seen = [NSMutableSet set];

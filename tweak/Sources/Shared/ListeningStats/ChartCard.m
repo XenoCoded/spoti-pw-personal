@@ -83,6 +83,8 @@ UIImage *SGChartCardImage(void) {
     // yesterday when today has not got going yet.
     NSDictionary *days = [snapshot[@"days"] isKindOfClass:NSDictionary.class] ? snapshot[@"days"] : @{};
     NSDateFormatter *dayFormat = [NSDateFormatter new];
+    dayFormat.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    dayFormat.calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
     dayFormat.dateFormat = @"yyyy-MM-dd";
     NSInteger streak = 0;
     for (NSInteger back = ([days[[dayFormat stringFromDate:NSDate.date]] doubleValue] > 0 ? 0 : 1); back < 400; back++) {

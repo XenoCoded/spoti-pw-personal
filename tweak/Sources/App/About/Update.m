@@ -10,12 +10,10 @@
 #import "About.h"
 
 NSString *const SGUpdateURL = @"https://spoti.pw/api/update";
-static NSString *const kGitHubURL = @"https://api.github.com/repos/skopevoj/spoti.pw/releases?per_page=20";
 NSString *const SGUpdateCheckedNotification = @"spotifyglass.update.checked.notification";
 
 static NSString *const kChecked = @"spotifyglass.update.checked";
 static NSString *const kReleases = @"spotifyglass.update.releases";
-static const NSTimeInterval kInterval = 6 * 60 * 60;
 
 static NSString *sg_failure;
 static BOOL sg_running;
@@ -201,38 +199,31 @@ static void ask(NSString *url, NSData *body, void (^done)(NSArray<NSDictionary *
 }
 
 void SGCheckForUpdate(BOOL force) {
+    // Personal fork (Batch 93): upstream's releases are not this
+    // build's updates — the sheet would offer the stock mod over this
+    // one and strand every fork feature. Stored releases are dropped
+    // and none are ever fetched or offered here; updates arrive as
+    // new IPAs. The one thing still sent is the day's usage count,
+    // and only when the user has opted into it (Privacy page).
     NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
-    NSTimeInterval last = [store doubleForKey:kChecked];
+    [store removeObjectForKey:kReleases];
     if (sg_running) return;
-    // The day's count goes out with the first check of the day, whatever the six hours say.
-    BOOL owed = SGUsageOwed();
-    if (!force && !owed && last > 0 && NSDate.date.timeIntervalSince1970 - last < kInterval) return;
-
+    if (!SGUsageOwed()) {
+        sg_failure = @"custom build";
+        [NSNotificationCenter.defaultCenter postNotificationName:SGUpdateCheckedNotification object:nil];
+        return;
+    }
     sg_running = YES;
     sg_failure = nil;
-    void (^finish)(NSArray<NSDictionary *> *, NSInteger, NSError *) = ^(NSArray<NSDictionary *> *releases, NSInteger status, NSError *error) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            sg_running = NO;
-            if (!releases) {
-                // Unauthenticated GitHub allows sixty requests an hour per address; a phone behind a
-                // carrier NAT can be told to wait, and that is worth reading apart from a dead network.
-                sg_failure = status == 403 || status == 429 ? @"asked too often" : @"check failed";
-                SGLog(@"update check failed: HTTP %ld, %@", (long)status,
-                      error.localizedDescription ?: @"no release in the reply");
-            } else {
-                [store setObject:releases forKey:kReleases];
-                [store setDouble:NSDate.date.timeIntervalSince1970 forKey:kChecked];
-                SGLog(@"update check: the newest is %@, this build is %s", releases.firstObject[@"version"], SG_VERSION);
-            }
-            [NSNotificationCenter.defaultCenter postNotificationName:SGUpdateCheckedNotification object:nil];
-        });
-    };
     NSData *body = SGUsageBody();
     if (body) SGUsageNoteAsked();
-    SGLog(@"update check: asking spoti.pw %@", body ? @"with the usage body" : @"without the usage body");
+    SGLog(@"update check: sending the day's usage count (opted in)");
     ask(SGUpdateURL, body, ^(NSArray<NSDictionary *> *releases, NSInteger status, NSError *error) {
-        if (releases) return finish(releases, status, error);
-        SGLog(@"update check: spoti.pw answered HTTP %ld, asking GitHub", (long)status);
-        ask(kGitHubURL, nil, finish);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            sg_running = NO;
+            sg_failure = @"custom build";
+            [store setDouble:NSDate.date.timeIntervalSince1970 forKey:kChecked];
+            [NSNotificationCenter.defaultCenter postNotificationName:SGUpdateCheckedNotification object:nil];
+        });
     });
 }

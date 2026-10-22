@@ -104,7 +104,7 @@ static UIViewController *lyricsPage(void) {
     }
     [sections addObject:SGSection(nil, more)];
     [sections addObject:SGSection(@"Big screen", @[SGTVLyricsRow()])];
-    return [[SGModPage alloc] initWithTitle:@"Lyrics" intro:SGRestartNote sections:sections footer:nil];
+    return [[SGModPage alloc] initWithTitle:@"Lyrics" intro:SGMixedNote sections:sections footer:nil];
 }
 
 // The Lyrics page, linked from the Mod Settings root since Batch 9 (it sat
@@ -151,5 +151,5 @@ UIViewController *SGPlayerSettingsPage(void) {
     [sections addObject:SGSection(@"Bookmarks", SGBookmarkRows())];
     [sections addObject:SGSection(@"Queue", SGQueueShareRows())];
 
-    return [[SGModPage alloc] initWithTitle:@"Player" intro:SGRestartNote sections:sections footer:nil];
+    return [[SGModPage alloc] initWithTitle:@"Player" intro:SGMixedNote sections:sections footer:nil];
 }

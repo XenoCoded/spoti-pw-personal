@@ -5,6 +5,7 @@
 #import "Core/SGCore.h"
 
 NSString *const SGRestartNote = @"Changes apply after you restart Spotify.";
+NSString *const SGMixedNote = @"Most changes apply straight away; a few apply after you restart Spotify.";
 
 @implementation SGModRow
 @end
@@ -431,7 +432,12 @@ NSArray<NSDictionary<NSString *, NSString *> *> *SGRecentSettings(void) {
     for (id entry in stored) {
         if (![entry isKindOfClass:NSDictionary.class]) continue;
         if (![entry[@"page"] isKindOfClass:NSString.class]) continue;
-        [clean addObject:entry];
+        // Rebuilt from the validated pieces (Batch 93): the row was
+        // checked nowhere, and the search page renders it as a title —
+        // a restored backup could plant any plist object there.
+        NSMutableDictionary *kept = [@{@"page": entry[@"page"]} mutableCopy];
+        if ([entry[@"row"] isKindOfClass:NSString.class]) kept[@"row"] = entry[@"row"];
+        [clean addObject:kept];
     }
     return clean;
 }

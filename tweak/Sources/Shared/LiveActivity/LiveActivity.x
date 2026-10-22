@@ -213,7 +213,7 @@ static void tick(void) API_AVAILABLE(ios(17.0)) {
     // the idle clock above restarts with this process, but staleness proves
     // the deadline passed while it was suspended. Playing is never reaped:
     // a playing player's updates keep its own stale date ahead of it.
-    if (SGLiveActivityBridge.isShowing && SGLiveActivityBridge.isStale
+    if (idleLimit() > 0 && SGLiveActivityBridge.isShowing && SGLiveActivityBridge.isStale
         && (!track.trackTitle.length || state.isPaused) && !sg_idleEnded) {
         [SGLiveActivityBridge end];
         sg_shown = nil;
@@ -289,6 +289,19 @@ static void tick(void) API_AVAILABLE(ios(17.0)) {
     if (SGInt(SGKeyLiveActivityTint, 0) == 0) {
         uint32_t rgb = 0;
         if (SGArtworkPaletteRGB(&rgb)) tint = (NSInteger)rgb;
+    }
+
+    // Keep-showing heartbeat (Batch 93): paused, the fingerprint below
+    // never changes, so nothing re-sends and the bridge's rolling stale
+    // date (five minutes from the last send) passes — the card blanked
+    // and the reap above ended it even when the idle setting said Never
+    // (the reap is now gated too). With no idle end armed, force the
+    // same state out again every four minutes so the date stays ahead.
+    static NSDate *sg_lastBeat;
+    if (paused && limit == 0 && SGLiveActivityBridge.isShowing && !sg_idleEnded
+        && (!sg_lastBeat || -sg_lastBeat.timeIntervalSinceNow >= 240)) {
+        sg_lastBeat = [NSDate date];
+        sg_shown = nil;
     }
 
     NSMutableArray<NSString *> *parts = [NSMutableArray arrayWithObjects:@(view).stringValue, paused ? @"1" : @"0", line, next,

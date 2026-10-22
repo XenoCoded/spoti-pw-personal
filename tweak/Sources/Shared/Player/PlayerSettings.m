@@ -39,7 +39,7 @@ UIViewController *SGLockScreenSettingsPage(void) {
         SGFlagRow(@"Chapter skip controls", @"ios-feature-lockscreen.enable_chapter_skip_controls"),
         SGFlagRow(@"Burst skip", @"ios-feature-lockscreen.burst_skip_enabled"),
     ])];
-    return [[SGModPage alloc] initWithTitle:@"Lock screen" intro:SGRestartNote sections:sections footer:nil];
+    return [[SGModPage alloc] initWithTitle:@"Lock screen" intro:SGMixedNote sections:sections footer:nil];
 }
 
 // The queue as text: the playing track, then what's up next, one a line —

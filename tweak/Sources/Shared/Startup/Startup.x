@@ -88,9 +88,7 @@ static void sg_tryJump(void) {
 // being the one door they all go through. Searches and the app's internal
 // plumbing are not places, and a URI carrying a query is a moment, not a
 // page.
-%hook SPTLinkDispatcherImplementation
-- (void)navigateToURI:(NSURL *)uri options:(long long)options interactionID:(id)interactionID {
-    %orig;
+static void recordNavigation(NSURL *uri) {
     if (!sg_recordNav || !uri) return;
     NSString *text = uri.absoluteString;
     if (![text hasPrefix:@"spotify:"] || [text hasPrefix:@"spotify:search"] ||
@@ -98,6 +96,19 @@ static void sg_tryJump(void) {
     if ([text isEqualToString:sg_lastNav]) return;
     sg_lastNav = text;
     [NSUserDefaults.standardUserDefaults setObject:text forKey:SGKeyStartupLastURI];
+}
+
+%hook SPTLinkDispatcherImplementation
+// 9.1.90's shape; the interactionID form below is 9.1.78's, kept for
+// older builds — on 9.1.90 it simply never fires (Batch 93).
+- (void)navigateToURI:(NSURL *)uri options:(id)options reason:(id)reason
+    completionHandler:(id)completionHandler resultHandler:(id)resultHandler {
+    %orig;
+    recordNavigation(uri);
+}
+- (void)navigateToURI:(NSURL *)uri options:(long long)options interactionID:(id)interactionID {
+    %orig;
+    recordNavigation(uri);
 }
 %end
 

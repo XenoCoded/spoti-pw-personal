@@ -65,6 +65,9 @@ static UIView *discFor(UIView *tilt) {
 }
 
 static void setSpinning(UIView *disc, BOOL spinning) {
+    // Reduce Motion (Batch 93): every other continuous animation in
+    // the mod honours it; the record simply stands still.
+    if (spinning && UIAccessibilityIsReduceMotionEnabled()) spinning = NO;
     if (spinning) {
         if ([disc.layer animationForKey:kSpinKey]) return;
         // The model transform still holds the frozen angle from the last
@@ -235,7 +238,7 @@ static void updateArm(UIView *tilt, BOOL playing, double fraction, BOOL animated
     BOOL stateChanged = !was || (was.boolValue != playing);
     objc_setAssociatedObject(tilt, &kArmStateKey, @(playing), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     CGFloat target = armAngle(playing, fraction);
-    if (animated && stateChanged) {
+    if (animated && stateChanged && !UIAccessibilityIsReduceMotionEnabled()) {
         [UIView animateWithDuration:0.5 delay:0 options:UIViewAnimationOptionCurveEaseInOut animations:^{
             swing.transform = CGAffineTransformMakeRotation(target);
         } completion:nil];
@@ -299,7 +302,11 @@ static CGFloat touchAngle(UIPanGestureRecognizer *pan, UIView *disc) {
         }
         return;
     }
-    if (pan.state == UIGestureRecognizerStateEnded || pan.state == UIGestureRecognizerStateCancelled) {
+    // Failed too (Batch 93): a recogniser that failed after Began
+    // used to leave sg_scrubDisc set, and every refresh skipped the
+    // disc's spin and arm for good — a dead record until recreated.
+    if (pan.state == UIGestureRecognizerStateEnded || pan.state == UIGestureRecognizerStateCancelled
+        || pan.state == UIGestureRecognizerStateFailed) {
         if (self.duration > 0) {
             double target = self.start + self.accumulated * (kSecondsPerRevolution / (M_PI * 2));
             target = MIN(self.duration, MAX(0, target));
@@ -312,7 +319,21 @@ static CGFloat touchAngle(UIPanGestureRecognizer *pan, UIView *disc) {
         refreshTilts();
     }
 }
+// The VoiceOver route to scrubbing (Batch 93): the drag is pan-only,
+// so the disc offers the same seek as accessibility actions.
+- (void)seekBy:(double)seconds {
+    NSInteger ms = SGKaraokePositionMs();
+    if (ms < 0) return;
+    double target = ms / 1000.0 + seconds;
+    SPTPlayerState *state = SGPlayerState();
+    if (state.duration > 0) target = MIN(state.duration, MAX(0, target));
+    id<SPTPlayer> player = SGKaraokePlayer();
+    [player seekTo:target];
+}
+- (BOOL)seekBack:(UIAccessibilityCustomAction *)action { [self seekBy:-10]; return YES; }
+- (BOOL)seekForward:(UIAccessibilityCustomAction *)action { [self seekBy:10]; return YES; }
 @end
+
 
 static SGRVinylScrubber *scrubber(void) {
     static SGRVinylScrubber *scrubber;
@@ -359,6 +380,17 @@ static void refreshTilts(void) {
         BOOL fresh = NO;
         if (!disc) {
             disc = makeDisc(tilt.bounds.size.width);
+            // An accessibility element in its own right (Batch 93):
+            // the real cover sits at alpha 0 under it, and without
+            // this the record — and scrubbing — did not exist for
+            // VoiceOver at all.
+            disc.isAccessibilityElement = YES;
+            disc.accessibilityLabel = @"Vinyl record";
+            disc.accessibilityHint = @"Drag in a circle to scrub";
+            disc.accessibilityCustomActions = @[
+                [[UIAccessibilityCustomAction alloc] initWithName:@"Back 10 seconds" target:scrubber() selector:@selector(seekBack:)],
+                [[UIAccessibilityCustomAction alloc] initWithName:@"Forward 10 seconds" target:scrubber() selector:@selector(seekForward:)],
+            ];
             disc.center = CGPointMake(CGRectGetMidX(tilt.bounds), CGRectGetMidY(tilt.bounds));
             [tilt addSubview:disc];
             objc_setAssociatedObject(tilt, &kDiscKey, disc, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -434,7 +466,11 @@ static void refreshTilts(void) {
 %end
 
 NSArray<SGModRow *> *SGRVinylRows(void) {
-    return @[SGWithSymbol(SGSwitchRow(@"Vinyl mode", @"The cover becomes a spinning record with a tonearm, artwork as the label. Drag the record in a circle to scrub.", SGKeyVinyl), @"opticaldisc")];
+    // The readers default OFF (Batch 93): the switch showed ON while
+    // the plain cover was showing.
+    SGModRow *vinyl = SGSwitchRow(@"Vinyl mode", @"The cover becomes a spinning record with a tonearm, artwork as the label. Drag the record in a circle to scrub.", SGKeyVinyl);
+    vinyl.defaultOn = NO;
+    return @[SGWithSymbol(vinyl, @"opticaldisc")];
 }
 
 %ctor {

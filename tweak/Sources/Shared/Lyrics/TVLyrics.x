@@ -73,6 +73,10 @@ static void acceptLoop(NSUInteger generation, int listenFd) {
         if (poll(&pfd, 1, 500) <= 0 || !(pfd.revents & POLLIN)) continue;
         int fd = accept(listenFd, NULL, NULL);
         if (fd < 0) continue;
+        // The poll can wake a loop whose run already ended (Batch 93):
+        // a fast off-on reuses the fd number, and this loop would serve
+        // one client off the new listener before its next check.
+        if (!sg_serving || generation != sg_acceptGeneration) { close(fd); break; }
         serveClient(fd);
         close(fd);
     }

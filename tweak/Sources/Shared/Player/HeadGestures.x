@@ -33,6 +33,10 @@ static void fire(NSString *key, SGGestureAction fallback) {
 
 // One attitude sample, pitch and roll in radians against the baselines.
 static void sample(double pitch, double roll) {
+    // Samples hop from the motion queue; ones already in flight when
+    // stopMotion ran land here after the stop (Batch 93) and must not
+    // complete a gesture nobody is listening for anymore.
+    if (!sg_running) return;
     CFTimeInterval now = CFAbsoluteTimeGetCurrent();
     if (!sg_seeded) {
         sg_basePitch = pitch;

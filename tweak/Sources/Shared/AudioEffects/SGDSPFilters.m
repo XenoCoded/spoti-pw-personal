@@ -264,7 +264,7 @@ static int byFrequency(const void *a, const void *b) {
     return fa < fb ? -1 : fa > fb;
 }
 
-bool SGDSPParseGraphicEq(const char *text, SGDSPGraphicCurve *curve) {
+static bool parseGraphicEqRaw(const char *text, SGDSPGraphicCurve *curve) {
     memset(curve, 0, sizeof *curve);
     const char *p = text ? strchr(text, ':') : NULL;
     if (!p || strncasecmp(text, "GraphicEQ:", 10) != 0) return false;
@@ -316,6 +316,30 @@ bool SGDSPParseGraphicEq(const char *text, SGDSPGraphicCurve *curve) {
     }
     free(pairs);
     return true;
+}
+
+bool SGDSPParseGraphicEq(const char *text, SGDSPGraphicCurve *curve) {
+    if (!text) return false;
+    // Pasted curves arrive in the wild with comma decimals and the
+    // typographic minus the mod's own pages display (U+2212); strtod
+    // stops dead at both and the curve silently truncated at the
+    // first one (Batch 93). In this grammar a comma is only ever a
+    // decimal mark — points split on ';' — so both are normalised on
+    // a copy; the common case parses in place.
+    if (!strchr(text, ',') && !strstr(text, "\xe2\x88\x92"))
+        return parseGraphicEqRaw(text, curve);
+    char *copy = strdup(text);
+    if (!copy) return false;
+    for (char *w = copy; *w; w++) {
+        if (*w == ',') *w = '.';
+        if ((unsigned char)w[0] == 0xE2 && (unsigned char)w[1] == 0x88 && (unsigned char)w[2] == 0x92) {
+            *w = '-';
+            memmove(w + 1, w + 3, strlen(w + 3) + 1);
+        }
+    }
+    bool ok = parseGraphicEqRaw(copy, curve);
+    free(copy);
+    return ok;
 }
 
 void SGDSPFreeGraphicEq(SGDSPGraphicCurve *curve) {

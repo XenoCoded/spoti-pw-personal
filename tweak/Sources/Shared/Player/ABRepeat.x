@@ -100,9 +100,31 @@ static void check(void) {
     }
 }
 
+// The timer exists only while a loop is set or stored (Batch 93):
+// persist() writes defaults on every set/clear, and every write posts
+// NSUserDefaultsDidChangeNotification, so the watcher follows the
+// store — a loop marked mid-session arms it at once, as before.
+static NSTimer *sg_timer;
+
+static void refreshTimer(void) {
+    BOOL armed = sg_a >= 0
+        || [NSUserDefaults.standardUserDefaults stringForKey:SGKeyABTrack] != nil;
+    if (armed && !sg_timer) {
+        sg_timer = [NSTimer timerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *timer) { check(); }];
+        [NSRunLoop.mainRunLoop addTimer:sg_timer forMode:NSRunLoopCommonModes];
+    } else if (!armed && sg_timer) {
+        [sg_timer invalidate];
+        sg_timer = nil;
+    }
+}
+
 %ctor {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *timer) { check(); }];
+        refreshTimer();
+        [NSNotificationCenter.defaultCenter
+            addObserverForName:NSUserDefaultsDidChangeNotification object:nil
+                         queue:NSOperationQueue.mainQueue
+                    usingBlock:^(NSNotification *note) { refreshTimer(); }];
     });
     SGLog(@"a-b repeat: watching");
 }

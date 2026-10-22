@@ -36,6 +36,8 @@ UIImage *SGHeatmapCardImage(void) {
 
     NSCalendar *calendar = NSCalendar.currentCalendar;
     NSDateFormatter *dayFormat = [NSDateFormatter new];
+    dayFormat.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    dayFormat.calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
     dayFormat.dateFormat = @"yyyy-MM-dd";
     NSDate *today = [calendar startOfDayForDate:NSDate.date];
     // This week's Sunday, then back 52 more weeks: the grid's first day.

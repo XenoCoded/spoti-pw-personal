@@ -36,9 +36,19 @@ static void sayImported(NSString *name, NSString *problem) {
     BOOL scoped = [url startAccessingSecurityScopedResource];
     NSString *name = url.lastPathComponent;
     NSString *to = [SGFontsDirectory() stringByAppendingPathComponent:name];
-    [NSFileManager.defaultManager removeItemAtPath:to error:nil];
+    // Staged, then swapped (Batch 93): the old import deleted the
+    // existing font first and copied onto the final path, so a failed
+    // copy lost the good font and could leave a partial in its place.
+    NSString *staged = [to stringByAppendingString:@".importing"];
+    [NSFileManager.defaultManager removeItemAtPath:staged error:nil];
     NSError *error = nil;
-    BOOL copied = [NSFileManager.defaultManager copyItemAtURL:url toURL:[NSURL fileURLWithPath:to] error:&error];
+    BOOL copied = [NSFileManager.defaultManager copyItemAtURL:url toURL:[NSURL fileURLWithPath:staged] error:&error];
+    if (copied) {
+        [NSFileManager.defaultManager removeItemAtPath:to error:nil];
+        copied = [NSFileManager.defaultManager moveItemAtPath:staged toPath:to error:&error];
+    } else {
+        [NSFileManager.defaultManager removeItemAtPath:staged error:nil];
+    }
     if (scoped) [url stopAccessingSecurityScopedResource];
     sayImported(SGFontDisplayName(name), copied ? nil : (error.localizedDescription ?: @"The file could not be copied."));
 }

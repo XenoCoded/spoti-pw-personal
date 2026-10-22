@@ -161,6 +161,10 @@ static UILabel *wordLabel(NSString *text, UIFont *font, UIColor *color, CGRect f
     _emphasis = SGInt(SGRKeyLyricsWordStyle, 0);
     NSInteger intensity = SGInt(SGRKeyLyricsWordIntensity, 1);
     _strength = intensity <= 0 ? 0.5 : intensity == 1 ? 1.0 : 1.6;
+    // Reduce Motion (Batch 93): every style is a transform or a bloom
+    // driven by this one multiplier — zeroing it leaves the sweep
+    // highlight, which is the part that carries the meaning.
+    if (UIAccessibilityIsReduceMotionEnabled()) _strength = 0;
     if (_emphasis == 3) {
         _halo = [[UIView alloc] initWithFrame:CGRectInset(self.bounds, -4, -1)];
         _halo.backgroundColor = UIColor.whiteColor;

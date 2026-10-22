@@ -15,6 +15,12 @@ static NSString *sg_trackID(void) {
     NSString *karaoke = SGKaraokePlayingTrack();
     if (karaoke.length) return karaoke;
     NSString *uri = SGURIString(SGPlayerState().track.URI);
+    // Local files: the last component of a spotify:local: URI is the
+    // file's duration, so equal-length files would share an id and an
+    // After-N count could never move between them (Batch 93). The
+    // whole URI is the id there; tracks and episodes keep the bare id
+    // older builds stored, so armed timers survive the upgrade.
+    if ([uri hasPrefix:@"spotify:local:"]) return uri;
     return uri.length ? [uri componentsSeparatedByString:@":"].lastObject : nil;
 }
 

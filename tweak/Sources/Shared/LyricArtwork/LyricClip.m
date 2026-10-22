@@ -7,6 +7,7 @@
 #import <UIKit/UIKit.h>
 #import "Core/SGCore.h"
 #import "LyricClip.h"
+#include <stdatomic.h>
 
 static const NSUInteger kKeptClips = 60;
 // A count alone is no ceiling: at Max quality a clip runs to several MB, so
@@ -133,8 +134,11 @@ static void prune(void) {
     for (NSURL *url in urls) {
         if (remaining <= kKeptClips && total <= kKeptBytes) break;
         if ([url.lastPathComponent isEqualToString:protectedName]) continue;
-        total -= [[url resourceValuesForKeys:@[NSURLFileSizeKey] error:nil][NSURLFileSizeKey] unsignedLongLongValue];
-        if ([files removeItemAtURL:url error:nil]) remaining--;
+        // Subtract only what was actually removed (Batch 93): a failed
+        // delete used to satisfy the byte cap on paper while the file
+        // stayed, so the cache could sit over its cap indefinitely.
+        unsigned long long size = [[url resourceValuesForKeys:@[NSURLFileSizeKey] error:nil][NSURLFileSizeKey] unsignedLongLongValue];
+        if ([files removeItemAtURL:url error:nil]) { remaining--; total -= size; }
     }
 }
 
@@ -178,9 +182,12 @@ void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duratio
         // the system calls time anyway, the flag below cancels the write
         // through the same path as a stall and the partial is discarded.
         __block UIBackgroundTaskIdentifier bgTask = UIBackgroundTaskInvalid;
-        __block BOOL bgExpired = NO;
+        // Atomic (Batch 93): the expiration handler writes this from
+        // its own context while the render loop reads it here; a plain
+        // BOOL shared across the two has no synchronisation at all.
+        __block atomic_bool bgExpired = NO;
         bgTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"spoti.pw lyric clip"
-            expirationHandler:^{ bgExpired = YES; }];
+            expirationHandler:^{ atomic_store(&bgExpired, true); }];
         void (^endBgTask)(void) = ^{
             if (bgTask != UIBackgroundTaskInvalid) {
                 [UIApplication.sharedApplication endBackgroundTask:bgTask];
@@ -221,7 +228,7 @@ void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duratio
         CGColorSpaceRef rgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
         NSInteger frames = MAX(2, (NSInteger)round(duration * fps));
         for (NSInteger frame = 0; frame < frames && ok; frame++) {
-            if (bgExpired) {
+            if (atomic_load(&bgExpired)) {
                 SGLog(@"lyric clip: background time called, aborting %@", key);
                 ok = NO;
                 break;
@@ -231,6 +238,10 @@ void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duratio
             // of stall aborts the render and the line keeps its still.
             NSTimeInterval stallStart = 0;
             while (!input.readyForMoreMediaData) {
+                // Expiry inside a stall (Batch 93): the flag was only
+                // read between frames, so a stalled writer could hold
+                // the render — and the process — past the deadline.
+                if (atomic_load(&bgExpired)) { ok = NO; break; }
                 if (writer.status != AVAssetWriterStatusWriting) { ok = NO; break; }
                 if (!stallStart) stallStart = NSDate.date.timeIntervalSince1970;
                 if (NSDate.date.timeIntervalSince1970 - stallStart > 5) {

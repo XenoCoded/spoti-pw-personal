@@ -13,9 +13,28 @@ id SGLinkDispatcher(void) {
 
 BOOL SGOpenSpotifyURI(NSURL *uri) {
     SPTLinkDispatcherImplementation *dispatcher = sg_linkDispatcher;
-    if (!uri || ![dispatcher respondsToSelector:@selector(navigateToURI:options:interactionID:)]) return NO;
-    [dispatcher navigateToURI:uri options:0 interactionID:nil];
-    return YES;
+    if (!uri || !dispatcher) return NO;
+    // 9.1.90's dispatcher takes a reason and two handlers where 9.1.78
+    // took an interaction id (Batch 93: the old selector is absent from
+    // the 9.1.90 executable, so every open through it silently failed —
+    // Opens to, the drawer's jumps, Open Artist, the stats rows). Real
+    // empty blocks ride along rather than nil: a Swift closure bridged
+    // as non-optional would trap on nil, and a block that takes fewer
+    // arguments than it is called with is harmless.
+    SEL current = @selector(navigateToURI:options:reason:completionHandler:resultHandler:);
+    if ([dispatcher respondsToSelector:current]) {
+        ((void (*)(id, SEL, NSURL *, id, id, id, id))objc_msgSend)(
+            dispatcher, current, uri, nil, nil,
+            (id)(^{ }), (id)(^(id result) { (void)result; }));
+        return YES;
+    }
+    SEL legacy = @selector(navigateToURI:options:interactionID:);
+    if ([dispatcher respondsToSelector:legacy]) {
+        ((void (*)(id, SEL, NSURL *, long long, id))objc_msgSend)(
+            dispatcher, legacy, uri, 0, nil);
+        return YES;
+    }
+    return NO;
 }
 
 #pragma mark - asking before opening

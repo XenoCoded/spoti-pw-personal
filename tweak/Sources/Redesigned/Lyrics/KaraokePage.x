@@ -24,11 +24,15 @@ static char kKaraokeKey, kCoverKey, kCoverWrapKey, kTitleKey, kArtistKey, kQueue
 // scene is asked for landscape once. Closing the page asks for portrait
 // back. Rotating the phone while the page is up then moves between the
 // two layouts the ordinary way.
-static BOOL sg_orientationUnlocked;
+// A count, not a flag (Batch 93): two lyrics hosts can overlap during
+// a transition, and the old single flag let the first host's vanish
+// relock the page the second host was still showing.
+static NSInteger sg_orientationHosts;
+static BOOL sg_orientationUnlocked(void) { return sg_orientationHosts > 0; }
 static IMP sg_delegateOrientations;
 
 static UIInterfaceOrientationMask sg_supportedOrientations(id self, SEL _cmd, UIApplication *app, UIWindow *window) {
-    if (sg_orientationUnlocked) return UIInterfaceOrientationMaskAllButUpsideDown;
+    if (sg_orientationUnlocked()) return UIInterfaceOrientationMaskAllButUpsideDown;
     if (sg_delegateOrientations) {
         return ((UIInterfaceOrientationMask (*)(id, SEL, UIApplication *, UIWindow *))sg_delegateOrientations)(self, _cmd, app, window);
     }
@@ -63,16 +67,18 @@ static void sg_requestOrientation(UIInterfaceOrientationMask mask, UIWindow *win
 }
 
 static void sg_karaokeAppeared(UIView *host) {
-    if (!SGFlag(SGRKeyLandscapeLyrics, NO) || sg_orientationUnlocked) return;
-    sg_installOrientationHook();
-    sg_orientationUnlocked = YES;
-    sg_requestOrientation(UIInterfaceOrientationMaskLandscape, host.window);
-    SGLog(@"karaoke: landscape unlocked while the lyrics page is up");
+    if (!SGFlag(SGRKeyLandscapeLyrics, NO)) return;
+    if (sg_orientationHosts == 0) {
+        sg_installOrientationHook();
+        sg_requestOrientation(UIInterfaceOrientationMaskLandscape, host.window);
+        SGLog(@"karaoke: landscape unlocked while the lyrics page is up");
+    }
+    sg_orientationHosts++;
 }
 
 static void sg_karaokeVanished(UIView *host) {
-    if (!sg_orientationUnlocked) return;
-    sg_orientationUnlocked = NO;
+    if (sg_orientationHosts == 0) return;
+    if (--sg_orientationHosts > 0) return;   // another host still shows the page
     // Called from didMoveToWindow, where the host's own window is already
     // gone; the portrait request goes to whatever window the scene has.
     UIWindow *window = host.window;
@@ -88,10 +94,10 @@ static void sg_karaokeVanished(UIView *host) {
 
 %hook UIViewController
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations {
-    return sg_orientationUnlocked ? UIInterfaceOrientationMaskAllButUpsideDown : %orig;
+    return sg_orientationUnlocked() ? UIInterfaceOrientationMaskAllButUpsideDown : %orig;
 }
 - (BOOL)shouldAutorotate {
-    return sg_orientationUnlocked ? YES : %orig;
+    return sg_orientationUnlocked() ? YES : %orig;
 }
 %end
 
@@ -120,7 +126,7 @@ static UILabel *coverLabel(char *key, UIView *host, UIFont *font, UIColor *color
     %orig;
     UIView *host = (UIView *)self;
     // The switch turned off again while the page is up: hand portrait back.
-    if (sg_orientationUnlocked && !SGFlag(SGRKeyLandscapeLyrics, NO)) sg_karaokeVanished(host);
+    if (sg_orientationUnlocked() && !SGFlag(SGRKeyLandscapeLyrics, NO)) sg_karaokeVanished(host);
     SGRKaraokeView *view = objc_getAssociatedObject(host, &kKaraokeKey);
     if (!view) {
         SGLog(@"karaoke: page opened, playing %@", SGKaraokePlayingTrack());

@@ -17,10 +17,18 @@ static NSMutableDictionary *sg_stats;
 // string where a number belongs (or an NSNull from a hand-edited JSON)
 // crashed the stats page. Every track and day entry is walked and its
 // known fields coerced; unknown keys are left alone for newer builds.
+// A stored number the stats can use: the right class AND finite
+// (Batch 93). JSON cannot carry NaN or infinity, so one planted via
+// an imported file made every later save fail serialisation and
+// silently no-op — listening simply stopped being recorded.
+static BOOL finiteNumber(id value) {
+    return [value isKindOfClass:NSNumber.class] && isfinite([value doubleValue]);
+}
+
 static void normalizeStats(void) {
     if (![sg_stats[@"tracks"] isKindOfClass:NSMutableDictionary.class])
         sg_stats[@"tracks"] = [NSMutableDictionary dictionary];
-    if (![sg_stats[@"totalSeconds"] isKindOfClass:NSNumber.class])
+    if (!finiteNumber(sg_stats[@"totalSeconds"]))
         sg_stats[@"totalSeconds"] = @0;
     NSMutableDictionary *tracks = sg_stats[@"tracks"];
     for (NSString *uri in [tracks allKeys]) {
@@ -32,11 +40,11 @@ static void normalizeStats(void) {
         NSMutableDictionary *row = entry;
         if (![row[@"title"] isKindOfClass:NSString.class]) row[@"title"] = @"";
         if (![row[@"artist"] isKindOfClass:NSString.class]) row[@"artist"] = @"";
-        if (![row[@"plays"] isKindOfClass:NSNumber.class]) row[@"plays"] = @0;
-        if (![row[@"seconds"] isKindOfClass:NSNumber.class]) row[@"seconds"] = @0;
-        if (row[@"lastPlayed"] && ![row[@"lastPlayed"] isKindOfClass:NSNumber.class])
+        if (!finiteNumber(row[@"plays"])) row[@"plays"] = @0;
+        if (!finiteNumber(row[@"seconds"])) row[@"seconds"] = @0;
+        if (row[@"lastPlayed"] && !finiteNumber(row[@"lastPlayed"]))
             [row removeObjectForKey:@"lastPlayed"];
-        if (row[@"firstPlayed"] && ![row[@"firstPlayed"] isKindOfClass:NSNumber.class])
+        if (row[@"firstPlayed"] && !finiteNumber(row[@"firstPlayed"]))
             [row removeObjectForKey:@"firstPlayed"];
     }
     // The day buckets are flat maps, day -> number: "days" holds the
@@ -50,7 +58,7 @@ static void normalizeStats(void) {
             [sg_stats removeObjectForKey:bucket];
         NSMutableDictionary *days = sg_stats[bucket];
         for (NSString *day in [days allKeys])
-            if (![days[day] isKindOfClass:NSNumber.class]) days[day] = @0;
+            if (!finiteNumber(days[day])) days[day] = @0;
     }
     if (sg_stats[@"daysTracks"] && ![sg_stats[@"daysTracks"] isKindOfClass:NSMutableDictionary.class])
         [sg_stats removeObjectForKey:@"daysTracks"];
@@ -61,6 +69,17 @@ static void normalizeStats(void) {
     // of listening and the stats page reads its fields by name, so an
     // entry that is not a play-shaped dictionary goes, and a field of
     // the wrong kind is zeroed or blanked like the tracks above.
+    // The tracks map is the one store that grew forever (Batch 93):
+    // every track ever heard, kept whole. Past the cap the stalest
+    // go — by last played, the ones the stats pages would miss least.
+    NSMutableDictionary *allTracks = sg_stats[@"tracks"];
+    if ([allTracks isKindOfClass:NSMutableDictionary.class] && allTracks.count > 8000) {
+        NSArray<NSString *> *byAge = [allTracks.allKeys sortedArrayUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
+            double ta = [allTracks[a][@"lastPlayed"] doubleValue], tb = [allTracks[b][@"lastPlayed"] doubleValue];
+            return ta < tb ? NSOrderedAscending : ta > tb ? NSOrderedDescending : NSOrderedSame;
+        }];
+        for (NSUInteger i = 0; i < byAge.count - 8000; i++) [allTracks removeObjectForKey:byAge[i]];
+    }
     if (sg_stats[@"journal"] && ![sg_stats[@"journal"] isKindOfClass:NSMutableArray.class])
         [sg_stats removeObjectForKey:@"journal"];
     NSMutableArray *journal = sg_stats[@"journal"];
@@ -71,8 +90,8 @@ static void normalizeStats(void) {
             continue;
         }
         NSMutableDictionary *entry = play;
-        if (![entry[@"t"] isKindOfClass:NSNumber.class]) entry[@"t"] = @0;
-        if (![entry[@"seconds"] isKindOfClass:NSNumber.class]) entry[@"seconds"] = @0;
+        if (!finiteNumber(entry[@"t"])) entry[@"t"] = @0;
+        if (!finiteNumber(entry[@"seconds"])) entry[@"seconds"] = @0;
         if (entry[@"title"] && ![entry[@"title"] isKindOfClass:NSString.class]) entry[@"title"] = @"";
         if (entry[@"artist"] && ![entry[@"artist"] isKindOfClass:NSString.class]) entry[@"artist"] = @"";
     }
@@ -120,6 +139,13 @@ static NSString *todayKey(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         format = [NSDateFormatter new];
+        // Pinned (Batch 93): an unpinned formatter renders the day in
+        // the user's calendar — Buddhist years, Japanese eras,
+        // Arabic-Indic digits — and every reader misses, so the day
+        // reads as zero and the buckets fork. Timezone stays local:
+        // a listening day is the user's day.
+        format.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+        format.calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
         format.dateFormat = @"yyyy-MM-dd";
     });
     return [format stringFromDate:NSDate.date];

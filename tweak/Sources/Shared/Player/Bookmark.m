@@ -79,6 +79,7 @@ NSArray<SGModRow *> *SGBookmarkRows(void) {
     go.visible = ^BOOL { return bookmarkFor(SGKaraokePlayingTrack()) >= 0; };
     // Auto-resume (Batch 71): the watcher in AutoResume.x reads this.
     SGModRow *autoResume = SGSwitchRow(@"Auto-resume at the bookmark", @"When a track with a bookmark starts, jump straight to it — once per play, so rewinding by hand is never fought.", SGKeyBookmarkAutoResume);
+    autoResume.defaultOn = NO;   // its reader defaults OFF (Batch 93): the switch showed ON while the feature was off
     SGModRow *clear = SGActionRow(@"Clear the bookmark", nil, ^{
         NSString *track = SGKaraokePlayingTrack();
         if (!track) return;

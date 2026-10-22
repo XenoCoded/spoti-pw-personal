@@ -58,6 +58,11 @@ static UIImage *filled(UIImage *image, CGSize size) {
 }
 
 static id artworkFor(NSString *artworkID, NSURL *file, UIImage *still) {
+    // Reduce Motion (Batch 93): the lyric clips check it at both the
+    // offer and the warm; the Canvas/Apple path never did — the still
+    // (the clip's first frame) is the whole artwork instead.
+    if (UIAccessibilityIsReduceMotionEnabled())
+        return still ? [[MPMediaItemArtwork alloc] initWithImage:still] : nil;
     if (@available(iOS 26.0, *)) {
         return [[MPMediaItemAnimatedArtwork alloc] initWithArtworkID:artworkID
             previewImageRequestHandler:^(CGSize size, void (^done)(UIImage *image)) {

@@ -64,6 +64,7 @@ void SGModPageFocus(NSString *page, NSString *row);
 
 // The intro of every page whose switches the hooks read at launch.
 extern NSString *const SGRestartNote;
+extern NSString *const SGMixedNote;
 
 SGModRow *SGSwitchRow(NSString *title, NSString *subtitle, NSString *key);   // on until switched off
 SGModRow *SGHideRow(NSString *title, NSString *subtitle, NSString *key);     // off until switched on

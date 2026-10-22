@@ -30,4 +30,4 @@ void SGRLogTabBarRow(UIView *tabBar);
 void SGRRefreshTabBar(void);
 
 UIViewController *SGRNavbarSettingsPage(void);   // the tab editor, in Mod Settings
-UIViewController *SGRNavbarEditorPage(void);     // the tab editor alone, for the welcome tour
+UIViewController *SGRNavbarEditorPage(void);     // the tab editor alone (kept unlinked, Batch 93: the tour never opens it)

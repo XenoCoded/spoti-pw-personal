@@ -154,6 +154,7 @@ NSArray<SGModRow *> *SGLyricArtworkRows(void) {
     SGModRow *shuffle = SGSwitchRow(@"Shuffle styles",
         @"A fresh style rolled for every track; the pick above is what plays when this is off.",
         SGKeyLyricArtworkShuffle);
+    shuffle.defaultOn = NO;   // its reader defaults OFF (Batch 93): the switch showed ON while nothing shuffled
     shuffle.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO); };
     // The card and the words, out of the app (Batch 35): the lock screen's
     // picture is the shareable thing players like Apple Music make of a

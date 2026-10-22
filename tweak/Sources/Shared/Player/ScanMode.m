@@ -11,8 +11,12 @@ double SGScanSliceSeconds(void) {
 }
 
 NSArray<SGModRow *> *SGScanModeRows(void) {
+    // The reader defaults OFF (Batch 93): the switch showed ON while
+    // scan mode was off.
+    SGModRow *scan = SGSwitchRow(@"Scan mode", @"Play a short slice of each track, then move on — for skimming long playlists. A pause holds the slice.", SGKeyScanMode);
+    scan.defaultOn = NO;
     return @[
-        SGSwitchRow(@"Scan mode", @"Play a short slice of each track, then move on — for skimming long playlists. A pause holds the slice.", SGKeyScanMode),
+        scan,
         SGChoiceRow(@"Slice length", nil, SGKeyScanSeconds,
                     @[@"10 seconds", @"15 seconds", @"30 seconds"], 1),
         SGChoiceRow(@"Slice from", @"The middle is a place, not a hook detector — it is just where choruses tend to live.", SGKeyScanOffset,

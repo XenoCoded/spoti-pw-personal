@@ -1,4 +1,5 @@
-// The Live Activity page (App/ModSettings.x links it from the root, under either look).
+// The Live Activity rows; the standalone page below is kept
+// unlinked (Batch 93) — the Lock screen page embeds the rows directly.
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "LiveActivity.h"

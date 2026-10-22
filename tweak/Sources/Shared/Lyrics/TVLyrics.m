@@ -55,7 +55,7 @@ NSData *SGTVLyricsCoverJPEG(void) {
 
 NSString *SGTVLyricsPageHTML(void) {
     return @"<!DOCTYPE html>\n"
-    "<html><head><meta charset=\"utf-8\">"
+    "<html lang=\"en\"><head><meta charset=\"utf-8\">"
     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
     "<title>Lyrics</title><style>"
     "html,body{margin:0;height:100%;background:#0a0a0a;color:#fff;"
@@ -72,7 +72,7 @@ NSString *SGTVLyricsPageHTML(void) {
     "</style></head><body><div id=\"wrap\">"
     "<img id=\"cover\" alt=\"\">"
     "<div id=\"title\"></div><div id=\"artist\"></div>"
-    "<div id=\"line\">♪</div><div id=\"next\"></div>"
+    "<div id=\"line\" dir=\"auto\" aria-live=\"polite\">♪</div><div id=\"next\" dir=\"auto\"></div>"
     "</div><div id=\"bar\"></div><script>"
     "var coverFor='';"
     "function tick(){fetch('/state').then(function(r){return r.json()}).then(function(s){"

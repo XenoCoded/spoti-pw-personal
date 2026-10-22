@@ -94,9 +94,18 @@ if xcrun --sdk iphoneos --find swiftc >/dev/null 2>&1; then
   unzip -p "$IN" "${APP_DIR}Info.plist" > "$ROOT/out/.info.plist"
   "$ROOT/scripts/build-extension.sh" "$ROOT/out/.info.plist" "$EXT_DIR"
   rm -f "$ROOT/out/.info.plist"
+  # Fail rather than ship without it (Batch 93): the extension is
+  # the Live Activity and the widgets, and this step used to be able
+  # to skip silently — the IPA looked fine and two features were
+  # simply not in it.
+  if [ ! -d "$EXT_DIR/SpotifyGlassLiveActivity.appex" ]; then
+    echo "==> extension build produced no appex; failing the build"
+    exit 1
+  fi
   FILES+=("$EXT_DIR/SpotifyGlassLiveActivity.appex")
 else
-  echo "==> no Xcode selected: building without the Live Activity extension"
+  echo "==> no swiftc on this runner; failing rather than shipping without the extension"
+  exit 1
 fi
 
 # Spotify's widget reads what the app writes through App Group suites the re-signed IPA is not entitled

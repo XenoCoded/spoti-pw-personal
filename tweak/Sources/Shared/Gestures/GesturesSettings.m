@@ -24,6 +24,22 @@ static NSString *cellLabel(SGGestureAction action) {
 - (void)reload;
 @end
 
+// A zone label VoiceOver can work (Batch 93): the grid was one tap
+// recogniser over plain labels, so the assignments could be heard
+// (as bare text) but never changed without sight. Activation runs
+// the same pick the tap does.
+@interface SGZoneLabel : UILabel
+@property (nonatomic) NSInteger zoneIndex;
+@property (nonatomic, copy) void (^activated)(NSInteger index);
+@end
+
+@implementation SGZoneLabel
+- (BOOL)accessibilityActivate {
+    if (self.activated) self.activated(self.zoneIndex);
+    return YES;
+}
+@end
+
 @implementation SGZoneGridView {
     NSMutableArray<UILabel *> *_labels;
     UIView *_frame;
@@ -53,7 +69,13 @@ static NSString *cellLabel(SGGestureAction action) {
         [_labels removeLastObject];
     }
     while (_labels.count < zones.count) {
-        UILabel *label = [UILabel new];
+        SGZoneLabel *label = [SGZoneLabel new];
+        label.isAccessibilityElement = YES;
+        label.accessibilityTraits = UIAccessibilityTraitButton;
+        __weak typeof(self) weakSelf = self;
+        label.activated = ^(NSInteger index) {
+            if (weakSelf.picked) weakSelf.picked(index);
+        };
         label.font = SGSubtitleFont();
         label.textColor = UIColor.whiteColor;
         label.textAlignment = NSTextAlignmentCenter;
@@ -64,9 +86,12 @@ static NSString *cellLabel(SGGestureAction action) {
         [_labels addObject:label];
     }
     [zones enumerateObjectsUsingBlock:^(NSNumber *action, NSUInteger index, BOOL *stop) {
-        UILabel *label = self->_labels[index];
+        SGZoneLabel *label = (SGZoneLabel *)self->_labels[index];
         SGGestureAction value = (SGGestureAction)action.integerValue;
         label.text = cellLabel(value);
+        label.zoneIndex = (NSInteger)index;
+        label.accessibilityLabel = [NSString stringWithFormat:@"Zone %lu of %lu: %@",
+            (unsigned long)index + 1, (unsigned long)zones.count, cellLabel(value)];
         label.textColor = value == SGGestureNothing ? SGGrey() : UIColor.whiteColor;
     }];
     [self setNeedsLayout];

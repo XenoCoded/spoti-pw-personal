@@ -8,6 +8,11 @@
 // here. What is left out belongs to this install rather than to its user's choices.
 static BOOL isSetting(NSString *key) {
     if (![key hasPrefix:@"spotifyglass."]) return NO;
+    // Token-shaped keys never travel (Batch 93): the Musixmatch and
+    // Apple artwork tokens are anonymous service tokens, not personal
+    // credentials, but a provider token is not a setting — and the
+    // next one stored under this prefix should stay home by default.
+    if ([key.lowercaseString containsString:@"token"]) return NO;
     for (NSString *local in @[@"spotifyglass.adblock.counts", @"spotifyglass.privacy.counts", @"spotifyglass.update.",
                               @"spotifyglass.signing.", @"spotifyglass.onboarding.", @"spotifyglass.navbar.stock",
                               @"spotifyglass.redesign.navbar.stock"]) {
@@ -44,7 +49,13 @@ void SGExportSettings(void) {
     if (stats.count) file[@"stats"] = stats;
     NSData *data = [NSJSONSerialization dataWithJSONObject:file options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:nil];
     NSURL *url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"spotifyglass-settings.json"]];
-    [data writeToURL:url atomically:YES];
+    // A failed write used to share the previous export sitting at the
+    // same fixed path (Batch 93): the user would send an old backup
+    // believing it was today's.
+    if (!data || ![data writeToURL:url atomically:YES]) {
+        showAlert(@"Export failed", @"The settings could not be written out. Nothing was shared.", nil);
+        return;
+    }
 
     UIViewController *top = SGTopController();
     UIActivityViewController *sheet = [[UIActivityViewController alloc] initWithActivityItems:@[url] applicationActivities:nil];

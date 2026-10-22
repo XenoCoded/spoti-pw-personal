@@ -85,6 +85,9 @@ SGLyricsAsk SGLyricsCacheAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResu
     NSData *data = [NSData dataWithContentsOfFile:pathFor(query.trackID)];
     NSDictionary *sheet = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
     if (![sheet isKindOfClass:NSDictionary.class] || ![sheet[@"lines"] isKindOfClass:NSArray.class]) {
+        // A file that will never parse is deleted (Batch 93): it used
+        // to be re-read and re-rejected on every play of the track.
+        if (data) [NSFileManager.defaultManager removeItemAtPath:pathFor(query.trackID) error:nil];
         done(nil);
         return;
     }
@@ -131,8 +134,8 @@ SGLyricsAsk SGLyricsCacheAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResu
     result.synced = YES;
     result.wordTimed = wordTimed;
     result.karaokeLines = lines;
-    result.title = sheet[@"title"];
-    result.artist = sheet[@"artist"];
+    result.title = [sheet[@"title"] isKindOfClass:NSString.class] ? sheet[@"title"] : @"";
+    result.artist = [sheet[@"artist"] isKindOfClass:NSString.class] ? sheet[@"artist"] : @"";
     NSArray<NSNumber *> *starts;
     NSArray<NSString *> *texts;
     SGLyricsPageLines(lines, &starts, &texts);

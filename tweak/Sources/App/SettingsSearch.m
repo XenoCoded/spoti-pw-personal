@@ -13,6 +13,9 @@
 #import "Shared/Navigation/Links.h"
 #import "Shared/ListeningStats/ChartCard.h"
 #import "Shared/ListeningStats/HeatmapCard.h"
+#import "Native/Appearance/Appearance.h"
+#import "Redesigned/Kit/SGRAccent.h"
+#import "Redesigned/Player/PlayerVinyl.h"
 
 #define SGKeyQuickAccess @"spotifyglass.settings.quickAccess"
 
@@ -138,6 +141,31 @@ static void indexActions(NSMutableArray<SGSearchEntry *> *entries, NSMutableSet<
     add(@"Copy year heatmap", ^{
         UIImage *image = SGHeatmapCardImage();
         if (image) UIPasteboard.generalPasteboard.image = image;
+    });
+    // Theme presets as actions (Batch 83): the same six accents the
+    // Appearance card offers, applied straight to whichever look is
+    // active — and Match cover art off, or the next track would take
+    // the accent straight back.
+    NSArray *presets = @[@[@"Catppuccin", @0xCBA6F7], @[@"Dracula", @0xFF79C6],
+                         @[@"Nord", @0x88C0D0], @[@"Gruvbox", @0xFE8019],
+                         @[@"Rosé Pine", @0xC4A7E7], @[@"Tokyo Night", @0x7AA2F7]];
+    BOOL redesign = SGRedesignedUIStored();
+    for (NSArray *preset in presets) {
+        NSString *name = preset[0];
+        NSInteger rgb = [preset[1] integerValue];
+        add([@"Theme · " stringByAppendingString:name], ^{
+            if (redesign) {
+                SGSetInt(SGRKeyAccent, rgb);
+                SGSetInt(SGRKeyAccentMatchArtwork, 0);
+            } else {
+                SGSetInt(SGKeyAccent, rgb);
+                SGSetInt(SGKeyAccentMatchArtwork, 0);
+            }
+        });
+    }
+    // Vinyl reads its switch live, so the palette can flip it with no restart.
+    add(@"Vinyl mode · Toggle", ^{
+        SGSetInt(SGKeyVinyl, !SGFlag(SGKeyVinyl, NO));
     });
 }
 

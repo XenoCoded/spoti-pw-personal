@@ -22,7 +22,11 @@ NSArray<SGModRow *> *SGLiveActivityRows(void) {
     SGModRow *lines = SGChoiceRow(@"Lines", nil, SGKeyLiveActivityLines,
                                   @[@"Current + next", @"Current only"], 0);
     SGModRow *interlude = SGSwitchRow(@"Interlude countdown", @"During a long break between lines, the card counts down to the next line instead of sitting on a note.", SGKeyLiveActivityInterlude);
-    return @[on, view, idle, lines, interlude];
+    // The card's accent (Batch 69): the cover's own colour, resolved by
+    // the artwork palette the accents already use, or Spotify green.
+    SGModRow *tint = SGChoiceRow(@"Tint", @"The card's accent colour: the playing cover's own, or Spotify green.", SGKeyLiveActivityTint,
+                                 @[@"Cover colour", @"Spotify green"], 0);
+    return @[on, view, idle, lines, interlude, tint];
 }
 
 UIViewController *SGLiveActivitySettingsPage(void) {

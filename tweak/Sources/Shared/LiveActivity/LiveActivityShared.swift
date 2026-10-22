@@ -51,6 +51,10 @@ struct SGLyricsAttributes: ActivityAttributes {
         // moment passes, and the stale date is set to it as well. Nil while playing
         // or when the activity is kept for good.
         var dismissAt: Date? = nil
+        // The card's accent as 0xRRGGBB (Batch 69): the playing cover's
+        // colour, resolved by the tweak from its artwork palette; 0 keeps
+        // the widget's Spotify green.
+        var tint: Int = 0
     }
 }
 

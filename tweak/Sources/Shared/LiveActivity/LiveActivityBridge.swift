@@ -79,7 +79,7 @@ public final class SGLiveActivityBridge: NSObject {
                                   titles: [String], artists: [String], uris: [String],
                                   tab: Int, title: String, artist: String, shuffle: Bool, repeatMode: Int,
                                   timerEnd: Date?, timerEndOfTrack: Bool,
-                                  positionSec: Double, durationSec: Double, dismissAt: Date?) {
+                                  positionSec: Double, durationSec: Double, dismissAt: Date?, tint: Int) {
         let tracks = titles.indices.map {
             SGLyricsAttributes.Track(title: titles[$0], artist: artists[$0], uri: uris[$0])
         }
@@ -88,7 +88,8 @@ public final class SGLiveActivityBridge: NSObject {
             line: line, nextLine: nextLine, tracks: tracks,
             tab: SGLyricsAttributes.Tab(rawValue: tab) ?? .controls, title: title, artist: artist,
             shuffle: shuffle, repeatMode: repeatMode, timerEnd: timerEnd, timerEndOfTrack: timerEndOfTrack,
-            positionSec: positionSec, durationSec: durationSec, sentAt: Date(), dismissAt: dismissAt)
+            positionSec: positionSec, durationSec: durationSec, sentAt: Date(), dismissAt: dismissAt,
+            tint: tint)
         // The stale horizon (personal fork): while a paused player's idle end is armed
         // it is the stale date, so the system itself marks the card stale at the very
         // moment it should end — the app, suspended, cannot. Otherwise a rolling

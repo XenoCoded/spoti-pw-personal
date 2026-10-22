@@ -8,6 +8,7 @@
 #import "Core/SGCore.h"
 #import "Headers/SPTPlayer.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/ArtworkPalette/ArtworkPalette.h"
 #import "LiveActivity.h"
 
 API_AVAILABLE(ios(17.0))
@@ -17,7 +18,8 @@ API_AVAILABLE(ios(17.0))
               titles:(NSArray<NSString *> *)titles artists:(NSArray<NSString *> *)artists uris:(NSArray<NSString *> *)uris
                  tab:(NSInteger)tab title:(NSString *)title artist:(NSString *)artist shuffle:(BOOL)shuffle repeatMode:(NSInteger)repeatMode
             timerEnd:(NSDate *)timerEnd timerEndOfTrack:(BOOL)timerEndOfTrack
-         positionSec:(double)positionSec durationSec:(double)durationSec dismissAt:(NSDate *)dismissAt;
+         positionSec:(double)positionSec durationSec:(double)durationSec dismissAt:(NSDate *)dismissAt
+              tint:(NSInteger)tint;
 + (void)end;
 @property (class, nonatomic, readonly) BOOL isStale;
 @end
@@ -277,10 +279,22 @@ static void tick(void) API_AVAILABLE(ios(17.0)) {
     NSDate *dismissAt = paused && limit > 0 && sg_idleSince
         ? [sg_idleSince dateByAddingTimeInterval:limit] : nil;
 
+    // The card's accent (Batch 69): the cover's colour while the choice
+    // says so, resolved from the same palette the app's accents use;
+    // the widget's green (a tint of 0) when the palette has nothing
+    // yet. It rides the fingerprint below: the palette lands a beat
+    // after the cover does, and the tinted state must still be sent
+    // when it arrives.
+    NSInteger tint = 0;
+    if (SGInt(SGKeyLiveActivityTint, 0) == 0) {
+        uint32_t rgb = 0;
+        if (SGArtworkPaletteRGB(&rgb)) tint = (NSInteger)rgb;
+    }
+
     NSMutableArray<NSString *> *parts = [NSMutableArray arrayWithObjects:@(view).stringValue, paused ? @"1" : @"0", line, next,
         @(tab).stringValue, title, artist, shuffle ? @"1" : @"0", @(repeatMode).stringValue,
         @((long long)sleepEnd.timeIntervalSince1970).stringValue, endOfTrack ? @"1" : @"0", @((long long)duration).stringValue,
-        @((long long)dismissAt.timeIntervalSince1970).stringValue,
+        @((long long)dismissAt.timeIntervalSince1970).stringValue, @(tint).stringValue,
         // A coarse position bucket (Batch 53): a long stretch on one line
         // (an instrumental, a podcast) otherwise sends nothing for minutes
         // and the card goes stale while it is legitimately playing. Half a
@@ -291,7 +305,7 @@ static void tick(void) API_AVAILABLE(ios(17.0)) {
         [SGLiveActivityBridge showWithView:view paused:paused line:line nextLine:next titles:titles artists:artists uris:uris
                                         tab:tab title:title artist:artist shuffle:shuffle repeatMode:repeatMode
                                    timerEnd:sleepEnd timerEndOfTrack:endOfTrack
-                                 positionSec:position durationSec:duration dismissAt:dismissAt];
+                                 positionSec:position durationSec:duration dismissAt:dismissAt tint:tint];
     });
 }
 

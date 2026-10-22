@@ -15,6 +15,16 @@ private let idle = Color.white.opacity(0.08)
 private typealias State = SGLyricsAttributes.ContentState
 private typealias Tab = SGLyricsAttributes.Tab
 
+extension SGLyricsAttributes.ContentState {
+    // The card's accent (Batch 69): the cover's colour the tweak sent,
+    // unpacked; Spotify green when it sent none (a tint of 0).
+    var accent: Color {
+        tint == 0 ? green : Color(red: Double((tint >> 16) & 0xFF) / 255,
+                                  green: Double((tint >> 8) & 0xFF) / 255,
+                                  blue: Double(tint & 0xFF) / 255)
+    }
+}
+
 @main
 struct SGLiveActivityBundle: WidgetBundle {
     var body: some Widget {
@@ -105,7 +115,7 @@ struct SGLyricsLiveActivity: Widget {
             } compactLeading: {
                 Retiring(state: context.state, stale: context.isStale) {
                     Image(systemName: "music.note")
-                        .foregroundStyle(green)
+                        .foregroundStyle(context.state.accent)
                 }
             } compactTrailing: {
                 Retiring(state: context.state, stale: context.isStale) {
@@ -113,18 +123,18 @@ struct SGLyricsLiveActivity: Widget {
                         if let end = context.state.timerEnd, end > Date() {
                             Text(timerInterval: Date()...end, countsDown: true)
                                 .monospacedDigit()
-                                .foregroundStyle(green)
+                                .foregroundStyle(context.state.accent)
                                 .frame(maxWidth: 44)
                         } else {
                             Image(systemName: context.state.paused ? "pause.fill" : "waveform")
-                                .foregroundStyle(green)
+                                .foregroundStyle(context.state.accent)
                         }
                     }
                 }
             } minimal: {
                 Retiring(state: context.state, stale: context.isStale) {
                     Image(systemName: "music.note")
-                        .foregroundStyle(green)
+                        .foregroundStyle(context.state.accent)
                 }
             }
             .widgetURL(URL(string: "spotify:"))
@@ -159,7 +169,7 @@ private struct LyricsView: View {
                 HStack(spacing: 6) {
                     Image(systemName: state.paused ? "pause.fill" : "waveform")
                         .font(.caption)
-                        .foregroundStyle(green)
+                        .foregroundStyle(state.accent)
                     Text(state.title)
                         .font(.caption.weight(.semibold))
                         .lineLimit(1)
@@ -203,7 +213,7 @@ private struct ProgressBar: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.white.opacity(0.18))
-                    Capsule().fill(green)
+                    Capsule().fill(state.accent)
                         .frame(width: geo.size.width * CGFloat(position / state.durationSec))
                 }
             }
@@ -310,7 +320,7 @@ private struct PanelView: View {
                     Toggle(isOn: tab == state.tab, intent: SGLiveActivityActionIntent("tab:\(tab.rawValue)")) {
                         EmptyView()
                     }
-                    .toggleStyle(TabStyle(tab: tab))
+                    .toggleStyle(TabStyle(tab: tab, accent: state.accent))
                 }
             }
             Group {
@@ -327,6 +337,7 @@ private struct PanelView: View {
 
 private struct TabStyle: ToggleStyle {
     let tab: Tab
+    var accent: Color = green
 
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 4) {
@@ -338,8 +349,8 @@ private struct TabStyle: ToggleStyle {
         .font(.caption.weight(.semibold))
         .frame(maxWidth: .infinity)
         .frame(height: 24)
-        .background(Capsule().fill(configuration.isOn ? green.opacity(0.22) : idle))
-        .foregroundStyle(configuration.isOn ? green : .white.opacity(0.7))
+        .background(Capsule().fill(configuration.isOn ? accent.opacity(0.22) : idle))
+        .foregroundStyle(configuration.isOn ? accent : .white.opacity(0.7))
     }
 }
 
@@ -368,12 +379,13 @@ private struct ChipStyle: ToggleStyle {
     var onLabel: String?
     // Play and pause flips its symbol but is not a setting, so it keeps the idle fill either way.
     var lights = true
+    var accent: Color = green
 
     func makeBody(configuration: Configuration) -> some View {
         let on = configuration.isOn
         ChipLabel(symbol: on ? onSymbol ?? symbol : symbol, label: on ? onLabel ?? label : label)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(on && lights ? green.opacity(0.22) : idle))
-            .foregroundStyle(on && lights ? green : .white)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(on && lights ? accent.opacity(0.22) : idle))
+            .foregroundStyle(on && lights ? accent : .white)
     }
 }
 
@@ -382,12 +394,13 @@ private struct ChipButton: View {
     let symbol: String
     let label: String
     var lit = false
+    var accent: Color = green
 
     var body: some View {
         Button(intent: SGLiveActivityActionIntent(action)) {
             ChipLabel(symbol: symbol, label: label)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(lit ? green.opacity(0.22) : idle))
-                .foregroundStyle(lit ? green : .white)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(lit ? accent.opacity(0.22) : idle))
+                .foregroundStyle(lit ? accent : .white)
         }
         .buttonStyle(.plain)
     }
@@ -408,15 +421,15 @@ private struct ControlsPage: View {
             .lineLimit(1)
             .invalidatableContent()
             HStack(spacing: 6) {
-                ChipButton(action: "previous", symbol: "backward.fill", label: "Previous")
+                ChipButton(action: "previous", symbol: "backward.fill", label: "Previous", accent: state.accent)
                 Toggle(isOn: !state.paused, intent: SGLiveActivityActionIntent("toggle")) { EmptyView() }
-                    .toggleStyle(ChipStyle(symbol: "play.fill", onSymbol: "pause.fill", label: "Play", onLabel: "Pause", lights: false))
-                ChipButton(action: "next", symbol: "forward.fill", label: "Next")
+                    .toggleStyle(ChipStyle(symbol: "play.fill", onSymbol: "pause.fill", label: "Play", onLabel: "Pause", lights: false, accent: state.accent))
+                ChipButton(action: "next", symbol: "forward.fill", label: "Next", accent: state.accent)
                 Toggle(isOn: state.shuffle, intent: SGLiveActivityActionIntent("shuffle")) { EmptyView() }
-                    .toggleStyle(ChipStyle(symbol: "shuffle", label: "Shuffle"))
+                    .toggleStyle(ChipStyle(symbol: "shuffle", label: "Shuffle", accent: state.accent))
                 // Three states, so a button: the new one shows once the render lands.
                 ChipButton(action: "repeat", symbol: state.repeatMode == 2 ? "repeat.1" : "repeat",
-                           label: "Repeat", lit: state.repeatMode != 0)
+                           label: "Repeat", lit: state.repeatMode != 0, accent: state.accent)
                     .invalidatableContent()
             }
         }
@@ -439,7 +452,7 @@ private struct QueuePage: View {
                     HStack(spacing: 10) {
                         Image(systemName: "play.fill")
                             .font(.caption)
-                            .foregroundStyle(green)
+                            .foregroundStyle(state.accent)
                         Text(track.title)
                             .font(.footnote.weight(.semibold))
                         Text(track.artist)
@@ -473,28 +486,28 @@ private struct TimerPage: View {
                         if let end = state.timerEnd {
                             Text(timerInterval: Date()...end, countsDown: true)
                                 .font(.system(size: 34, weight: .bold).monospacedDigit())
-                                .foregroundStyle(green)
+                                .foregroundStyle(state.accent)
                         } else {
                             Text("End of track")
                                 .font(.title2.weight(.bold))
-                                .foregroundStyle(green)
+                                .foregroundStyle(state.accent)
                         }
                     }
                     Spacer(minLength: 0)
                     HStack(spacing: 8) {
                         if state.timerEnd != nil {
-                            ChipButton(action: "timer:add", symbol: "plus", label: "15 min")
+                            ChipButton(action: "timer:add", symbol: "plus", label: "15 min", accent: state.accent)
                         }
-                        ChipButton(action: "timer:cancel", symbol: "xmark", label: "Cancel")
+                        ChipButton(action: "timer:cancel", symbol: "xmark", label: "Cancel", accent: state.accent)
                     }
                     .frame(width: state.timerEnd != nil ? 140 : 66)
                 }
             } else {
                 HStack(spacing: 8) {
-                    ChipButton(action: "timer:15", symbol: "moon", label: "15 min")
-                    ChipButton(action: "timer:30", symbol: "moon", label: "30 min")
-                    ChipButton(action: "timer:60", symbol: "moon", label: "1 hour")
-                    ChipButton(action: "timer:track", symbol: "music.note", label: "End of track")
+                    ChipButton(action: "timer:15", symbol: "moon", label: "15 min", accent: state.accent)
+                    ChipButton(action: "timer:30", symbol: "moon", label: "30 min", accent: state.accent)
+                    ChipButton(action: "timer:60", symbol: "moon", label: "1 hour", accent: state.accent)
+                    ChipButton(action: "timer:track", symbol: "music.note", label: "End of track", accent: state.accent)
                 }
             }
         }

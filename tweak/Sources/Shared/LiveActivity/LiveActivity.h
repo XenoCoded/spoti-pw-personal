@@ -34,6 +34,9 @@
 // Whether a long break between lines counts down to the next one on the
 // card (Batch 59), on until switched off.
 #define SGKeyLiveActivityInterlude @"spotifyglass.liveActivity.interlude"
+// The card's accent (Batch 69): 0 the playing cover's colour, from the
+// artwork palette; 1 Spotify green, whatever plays.
+#define SGKeyLiveActivityTint @"spotifyglass.liveActivity.tint"
 // What the keys were called while this was the redesign's alone; LiveActivity.x's %ctor moves them over.
 #define SGKeyLiveActivityWas @"spotifyglass.redesign.liveActivity"
 #define SGKeyLiveActivityViewWas @"spotifyglass.redesign.liveActivity.view"

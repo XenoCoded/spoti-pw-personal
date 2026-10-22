@@ -17,6 +17,12 @@ typedef NS_ENUM(NSInteger, SGRLyricsText) {
 #define SGRKeyLyricsTextOrder @"spotifyglass.redesign.lyricsTextOrder"
 // Turned sideways, the lyrics share the screen with the cover (Batch 24).
 #define SGRKeyLandscapeLyrics @"spotifyglass.redesign.landscapeLyrics"
+// What the landscape side pane holds, which side it stands on, and how much of the width the
+// lyrics take (Batch 63): the pane is the cover or the queue to come; the swap puts it on the
+// right; the share is the lyrics' three-fifths, half, or seven-tenths.
+#define SGRKeyLandscapePane @"spotifyglass.redesign.landscapePane"
+#define SGRKeyLandscapeSwap @"spotifyglass.redesign.landscapeSwap"
+#define SGRKeyLandscapeShare @"spotifyglass.redesign.landscapeShare"
 // How the word being sung stands out, and how hard it stands out (Batch 61): the styles are
 // float (rise as it starts), grow (swell to a held size), pop (an overshoot as the word lands)
 // and glow (a highlight blooming behind it); the emphasis is gentle, normal or bold. The words
@@ -41,3 +47,7 @@ SGModRow *SGRLandscapeLyricsRow(void);
 // The word style and emphasis rows (Batch 61), for the same section.
 SGModRow *SGRLyricsWordStyleRow(void);
 SGModRow *SGRLyricsWordIntensityRow(void);
+// The landscape pane, swap and share rows (Batch 63), for the same section.
+SGModRow *SGRLandscapePaneRow(void);
+SGModRow *SGRLandscapeSwapRow(void);
+SGModRow *SGRLandscapeShareRow(void);

@@ -134,6 +134,28 @@ SGModRow *SGRLyricsWordIntensityRow(void) {
         ^{ pickWordSetting(@"Word emphasis", SGRKeyLyricsWordIntensity, names); });
 }
 
+// The landscape pane's three choices (Batch 63): what it holds, which side
+// it stands on, and how the width is shared. Plain stored choices, read by
+// the lyrics page each time it lays out — they land the next time the page
+// is laid out, which turning the phone or reopening the lyrics does.
+SGModRow *SGRLandscapePaneRow(void) {
+    return SGChoiceRow(@"Landscape side pane",
+        @"What stands beside the lyrics with the phone sideways: the cover, or the queue to come.",
+        SGRKeyLandscapePane, @[@"Cover", @"Up next"], 0);
+}
+
+SGModRow *SGRLandscapeSwapRow(void) {
+    return SGOptionRow(@"Swap landscape sides",
+        @"Put the side pane on the right and the lyrics on the left.",
+        SGRKeyLandscapeSwap);
+}
+
+SGModRow *SGRLandscapeShareRow(void) {
+    return SGChoiceRow(@"Landscape lyrics share",
+        @"How much of the sideways width the lyrics take; the pane takes the rest.",
+        SGRKeyLandscapeShare, @[@"60%", @"50%", @"70%"], 0);
+}
+
 SGModRow *SGRLyricsTextSizesRow(void) {
     return SGPageRow(@"Text sizes", ^UIViewController *{ return [SGRLyricsTextPage new]; });
 }

@@ -95,7 +95,7 @@ static UIViewController *lyricsPage(void) {
     if (!redesigned) [more insertObject:SGGlassLyricsRow() atIndex:0];
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObject:SGLyricsSourcesSection(redesigned)];
     if (redesigned) {
-        [sections addObject:SGSection(@"Display", @[SGLyricsWordTimingRow(), SGRLyricsWordStyleRow(), SGRLyricsWordIntensityRow(), SGRLyricsTextSizesRow(), SGLyricsTranslationLanguageRow(), SGLyricsMeaningsRow(), SGRLandscapeLyricsRow()])];
+        [sections addObject:SGSection(@"Display", @[SGLyricsWordTimingRow(), SGRLyricsWordStyleRow(), SGRLyricsWordIntensityRow(), SGRLyricsTextSizesRow(), SGLyricsTranslationLanguageRow(), SGLyricsMeaningsRow(), SGRLandscapeLyricsRow(), SGRLandscapePaneRow(), SGRLandscapeSwapRow(), SGRLandscapeShareRow()])];
     }
     [sections addObject:SGSection(nil, more)];
     return [[SGModPage alloc] initWithTitle:@"Lyrics" intro:SGRestartNote sections:sections footer:nil];

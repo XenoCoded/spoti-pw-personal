@@ -8,6 +8,11 @@
 #import "Settings/SGModPage.h"
 #import "Settings/SGPage.h"
 #import "Settings/SGPageStyle.h"
+#import "Shared/Gestures/Gestures.h"
+#import "Shared/Player/SleepTimer.h"
+#import "Shared/Navigation/Links.h"
+#import "Shared/ListeningStats/ChartCard.h"
+#import "Shared/ListeningStats/HeatmapCard.h"
 
 #define SGKeyQuickAccess @"spotifyglass.settings.quickAccess"
 
@@ -46,6 +51,9 @@ NSArray<NSString *> *SGQuickAccessTitles(void) {
 // matches), and `target` is the row the page should flash on arrival.
 @property (nonatomic, copy) NSString *target;
 @property (nonatomic, copy) UIViewController *(^build)(void);
+// For an action entry (the command palette, Batch 76): no page to open —
+// the tap does this instead, and the search steps aside.
+@property (nonatomic, copy) void (^action)(void);
 @end
 
 @implementation SGSearchEntry
@@ -93,6 +101,46 @@ static void indexPage(NSMutableArray<SGSearchEntry *> *entries, NSMutableSet<NSS
     }
 }
 
+// The command palette (Batch 76): the search stops being only a way to
+// FIND settings and becomes a way to DO things — every gesture action by
+// name, the sleep timer's useful spans, the three tabs, and the two
+// copy-as-image cards. Each is an entry whose page reads "Actions" and
+// whose tap performs instead of navigating. The list is curated on
+// purpose: things a person would type ("next", "sleep 30", "home").
+static void indexActions(NSMutableArray<SGSearchEntry *> *entries, NSMutableSet<NSString *> *seen) {
+    void (^add)(NSString *, void (^)(void)) = ^(NSString *title, void (^run)(void)) {
+        NSString *stamp = [@"Actions" stringByAppendingFormat:@"\n%@", title];
+        if ([seen containsObject:stamp]) return;
+        [seen addObject:stamp];
+        SGSearchEntry *entry = [SGSearchEntry new];
+        entry.row = title;
+        entry.page = @"Actions";
+        entry.action = run;
+        [entries addObject:entry];
+    };
+    NSArray<NSString *> *gestures = SGGestureActionNames();
+    for (NSUInteger i = 0; i < gestures.count; i++) {
+        SGGestureAction action = (SGGestureAction)i;
+        add(gestures[i], ^{ SGGesturePerform(action); });
+    }
+    add(@"Sleep timer · 15 minutes", ^{ SGSleepTimerChoose(1); });
+    add(@"Sleep timer · 30 minutes", ^{ SGSleepTimerChoose(2); });
+    add(@"Sleep timer · 1 hour", ^{ SGSleepTimerChoose(4); });
+    add(@"Sleep timer · End of track", ^{ SGSleepTimerChoose(5); });
+    add(@"Sleep timer · Off", ^{ SGSleepTimerChoose(0); });
+    add(@"Open Home", ^{ SGOpenSpotifyURI([NSURL URLWithString:@"spotify:home"]); });
+    add(@"Open Search", ^{ SGOpenSpotifyURI([NSURL URLWithString:@"spotify:search"]); });
+    add(@"Open Your Library", ^{ SGOpenSpotifyURI([NSURL URLWithString:@"spotify:collection"]); });
+    add(@"Copy chart card", ^{
+        UIImage *image = SGChartCardImage();
+        if (image) UIPasteboard.generalPasteboard.image = image;
+    });
+    add(@"Copy year heatmap", ^{
+        UIImage *image = SGHeatmapCardImage();
+        if (image) UIPasteboard.generalPasteboard.image = image;
+    });
+}
+
 static NSArray<SGSearchEntry *> *searchIndex(void) {
     if (sg_index) return sg_index;
     sg_indexing = YES;
@@ -102,6 +150,7 @@ static NSArray<SGSearchEntry *> *searchIndex(void) {
     for (SGModRow *row in SGSettingsSearchRegistry()) {
         if (row.page) indexPage(entries, seen, row.title, row.page, 1);
     }
+    indexActions(entries, seen);
     sg_indexing = NO;
     sg_index = entries;
     SGLog(@"settings search: indexed %lu settings", (unsigned long)entries.count);
@@ -144,7 +193,7 @@ static UIViewController *(^builderForPage(NSString *pageTitle))(void) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     _bar = [[UISearchBar alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 56)];
-    _bar.placeholder = @"Try “lyrics”, “tint”, “sleep”…";
+    _bar.placeholder = @"Try “lyrics”, “next track”, “sleep”…";
     _bar.delegate = self;
     _bar.autocorrectionType = UITextAutocorrectionTypeNo;
     _bar.autocapitalizationType = UITextAutocapitalizationTypeNone;
@@ -224,13 +273,21 @@ static UIViewController *(^builderForPage(NSString *pageTitle))(void) {
         }
     }
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;
-    cell.accessoryView = SGSymbolView(@"chevron.right", 13, UIImageSymbolWeightSemibold, 16);
+    cell.accessoryView = entry.action ? SGSymbolView(@"bolt.fill", 13, UIImageSymbolWeightSemibold, 16)
+                                      : SGSymbolView(@"chevron.right", 13, UIImageSymbolWeightSemibold, 16);
     return cell;
 }
 
 - (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)path {
     [table deselectRowAtIndexPath:path animated:YES];
     SGSearchEntry *entry = _shown[(NSUInteger)path.row];
+    // An action does its thing and the search steps aside — back to the
+    // root, where what it did (a skip, a tab, a timer) can be seen.
+    if (entry.action) {
+        entry.action();
+        [self.navigationController popToRootViewControllerAnimated:YES];
+        return;
+    }
     UIViewController *page = entry.build();
     if (!page) return;
     // A recent for a page itself carries the page's name as its row; asking

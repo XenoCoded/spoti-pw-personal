@@ -66,6 +66,10 @@ struct SGNowPlayingWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "SGNowPlayingWidget", provider: SGWidgetProvider()) { entry in
             SGNowPlayingView(entry: entry)
+                // Black, the way the mod's own pages are; without a
+                // container background WidgetKit draws its "please adopt
+                // the container background API" placeholder instead.
+                .containerBackground(Color.black, for: .widget)
         }
         .configurationDisplayName("Now Playing")
         .description("The song, and the line being sung.")
@@ -127,6 +131,7 @@ struct SGStatsWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "SGStatsWidget", provider: SGWidgetProvider()) { entry in
             SGStatsView(entry: entry)
+                .containerBackground(Color.black, for: .widget)
         }
         .configurationDisplayName("Listening Today")
         .description("Today's plays, time and streak, from the stats this phone keeps.")

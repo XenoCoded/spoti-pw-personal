@@ -178,6 +178,30 @@ NSDictionary *SGStatsSnapshot(void) {
     return [stats() copy];
 }
 
+// The backup's two doors (Batch 62). Export is the snapshot by another
+// name; import takes the file's store on as this phone's, normalized the
+// way the lazy load normalizes it, through a JSON round trip so every
+// nested piece is mutable again — a shallow copy would leave the tracks
+// dictionary frozen, and the first play counted after the import would
+// write into it and crash.
+NSDictionary *SGStatsExport(void) {
+    return [stats() copy];
+}
+
+void SGStatsImport(NSDictionary *store) {
+    NSData *data = [store isKindOfClass:NSDictionary.class]
+        ? [NSJSONSerialization dataWithJSONObject:store options:0 error:nil] : nil;
+    id parsed = data ? [NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingMutableContainers error:nil] : nil;
+    if (![parsed isKindOfClass:NSMutableDictionary.class]) return;
+    sg_stats = parsed;
+    if (![sg_stats[@"tracks"] isKindOfClass:NSMutableDictionary.class])
+        sg_stats[@"tracks"] = [NSMutableDictionary dictionary];
+    if (![sg_stats[@"totalSeconds"] isKindOfClass:NSNumber.class])
+        sg_stats[@"totalSeconds"] = @0;
+    save();
+    SGLog(@"listening stats: imported");
+}
+
 void SGStatsClear(void) {
     sg_stats = [NSMutableDictionary dictionary];
     sg_stats[@"tracks"] = [NSMutableDictionary dictionary];

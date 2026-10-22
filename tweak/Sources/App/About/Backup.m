@@ -1,6 +1,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "Core/SGCore.h"
 #import "Settings/SGPageStyle.h"
+#import "Shared/ListeningStats/ListeningStats.h"
 #import "About.h"
 
 // Every key under the prefix travels, the way the reset sweeps them, so a new switch needs nothing
@@ -31,11 +32,16 @@ void SGExportSettings(void) {
     [storedDefaults() enumerateKeysAndObjectsUsingBlock:^(NSString *key, id value, BOOL *stop) {
         if (isSetting(key) && [NSJSONSerialization isValidJSONObject:@[value]]) settings[key] = value;
     }];
-    NSDictionary *file = @{
+    NSMutableDictionary *file = [@{
         @"mod": @(SG_VERSION),
         @"spotify": [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"unknown",
         @"settings": settings,
-    };
+    } mutableCopy];
+    // The listening stats live in their own file, not in the settings, so
+    // they ride along beside them (Batch 62) — when there are any. A file
+    // with nothing heard yet exports exactly as it always has.
+    NSDictionary *stats = SGStatsExport();
+    if (stats.count) file[@"stats"] = stats;
     NSData *data = [NSJSONSerialization dataWithJSONObject:file options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:nil];
     NSURL *url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"spotifyglass-settings.json"]];
     [data writeToURL:url atomically:YES];
@@ -55,7 +61,10 @@ static Class kindOf(id value) {
 
 // A key already stored keeps its type: the hooks send boolValue to whatever they find at launch, and
 // an array there would crash Spotify before the reset row could be reached.
-static void importSettings(NSDictionary *settings) {
+// The stats ride along when the file carries them (Batch 62): a non-empty
+// store in the file replaces this phone's, and a file without one — every
+// backup from before they travelled — leaves the listening history alone.
+static void importSettings(NSDictionary *settings, NSDictionary *stats) {
     NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
     NSDictionary *stored = storedDefaults();
     for (NSString *key in stored) {
@@ -71,6 +80,7 @@ static void importSettings(NSDictionary *settings) {
         if (fits) [store setObject:value forKey:key];
         else skipped++;
     }
+    if ([stats isKindOfClass:NSDictionary.class] && stats.count) SGStatsImport(stats);
     SGLog(@"import: set %lu keys, skipped %lu", (unsigned long)(settings.count - skipped), (unsigned long)skipped);
     SGRestartSpotify();
 }
@@ -89,9 +99,12 @@ static void importSettings(NSDictionary *settings) {
         return;
     }
     NSString *mod = [file[@"mod"] isKindOfClass:NSString.class] ? file[@"mod"] : @"unknown";
+    NSDictionary *stats = [file[@"stats"] isKindOfClass:NSDictionary.class] ? file[@"stats"] : nil;
     NSString *message = [NSString stringWithFormat:@"Your settings are replaced by the file's, exported from version %@. Anything it does not have goes back to its default, and Spotify restarts.", mod];
+    if (stats.count)
+        message = [message stringByAppendingString:@" The listening stats in the file replace the ones this phone has kept."];
     showAlert(@"Import settings?", message, [UIAlertAction actionWithTitle:@"Import and restart" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
-        importSettings(settings);
+        importSettings(settings, stats);
     }]);
 }
 

@@ -27,6 +27,12 @@ NSArray<NSDictionary *> *SGStatsJournal(void);
 // "3 h 25 min" for a count of seconds; the pages' way of writing a span out.
 NSString *SGStatsFormatTime(NSTimeInterval seconds);
 
+// The whole store, for the settings backup (App/About/Backup.m): this file is
+// the mod's one piece of state that is not a settings key, so Export settings
+// carries it alongside them and Import hands it back here to become the store.
+NSDictionary *SGStatsExport(void);
+void SGStatsImport(NSDictionary *store);
+
 UIViewController *SGListeningStatsPage(void);
 // The row's readout on the Player page: Off, or the total time so far.
 NSString *SGListeningStatsSummary(void);

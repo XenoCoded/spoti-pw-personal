@@ -133,14 +133,16 @@ static void refreshTilts(void) {
         }
         if (cover) cover.alpha = 0;
         UIView *disc = discFor(tilt);
+        BOOL fresh = NO;
         if (!disc) {
             disc = makeDisc(tilt.bounds.size.width);
             disc.center = CGPointMake(CGRectGetMidX(tilt.bounds), CGRectGetMidY(tilt.bounds));
             [tilt addSubview:disc];
             objc_setAssociatedObject(tilt, &kDiscKey, disc, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            fresh = YES;
         }
         NSString *last = objc_getAssociatedObject(tilt, &kURIKey);
-        if (uri.length && ![uri isEqualToString:last]) {
+        if (uri.length && (fresh || ![uri isEqualToString:last])) {
             objc_setAssociatedObject(tilt, &kURIKey, uri, OBJC_ASSOCIATION_COPY_NONATOMIC);
             UIImageView *label = (UIImageView *)[disc viewWithTag:7];
             NSString *trackURI = nil, *identity = nil;
@@ -175,9 +177,7 @@ static void refreshTilts(void) {
 %end
 
 NSArray<SGModRow *> *SGRVinylRows(void) {
-    SGModRow *on = SGSwitchRow(@"Vinyl mode", @"The cover becomes a spinning record, artwork as the label", SGKeyVinyl);
-    on.value = ^NSString *{ return SGFlag(SGKeyVinyl, NO) ? @"On" : @"Off"; };
-    return @[SGWithSymbol(on, @"opticaldisc")];
+    return @[SGWithSymbol(SGSwitchRow(@"Vinyl mode", @"The cover becomes a spinning record, artwork as the label", SGKeyVinyl), @"opticaldisc")];
 }
 
 %ctor {
@@ -187,4 +187,13 @@ NSArray<SGModRow *> *SGRVinylRows(void) {
     static SGRVinylWatcher *watcher;
     watcher = [SGRVinylWatcher new];
     SGAddPlayerStateObserver(watcher);
+    // The artwork can arrive after the track change that asked for it;
+    // forgetting the stored URIs makes the next refresh repaint labels.
+    [[NSNotificationCenter defaultCenter]
+        addObserverForName:SGRNowPlayingArtworkDidChangeNotification object:nil
+        queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+            for (UIView *tilt in sg_vinylTilts.allObjects)
+                objc_setAssociatedObject(tilt, &kURIKey, nil, OBJC_ASSOCIATION_COPY_NONATOMIC);
+            refreshTilts();
+        }];
 }

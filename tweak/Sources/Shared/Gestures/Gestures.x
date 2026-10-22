@@ -11,6 +11,7 @@
 #import "Shared/Player/ABRepeat.h"
 #import "Shared/Player/Bookmark.h"
 #import "Shared/Player/Ratings.h"
+#import "Shared/TrackBin/TrackBin.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Navigation/Links.h"
@@ -126,6 +127,18 @@ static void perform(SGGestureAction action) {
         case SGGestureRateUp:
             SGRateUpCurrent();
             break;
+        case SGGestureBinTrack: {
+            // Bin it, and if the bin is on, end it now too — the same
+            // skip the bin's own watcher would do a track change from
+            // now, done through this switch's own next-track case so
+            // the haptics observer hears one action, not two.
+            NSDictionary *entry = SGPlayingTrackEntry();
+            if (entry) {
+                SGBinTrack(entry);
+                if (SGFlag(SGKeyTrackBin, NO)) perform(SGGestureNextTrack);
+            }
+            break;
+        }
     }
 }
 

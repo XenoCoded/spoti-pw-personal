@@ -39,6 +39,9 @@ typedef NS_ENUM(NSInteger, SGGestureAction) {
     SGGestureSleepOff,
     SGGestureSleep15,
     SGGestureRateUp,
+    // The trash bin on a tap (Batch 78): "not interested" from anywhere
+    // the grid reaches, without opening the player page.
+    SGGestureBinTrack,
 };
 
 NSArray<NSString *> *SGGestureActionNames(void);

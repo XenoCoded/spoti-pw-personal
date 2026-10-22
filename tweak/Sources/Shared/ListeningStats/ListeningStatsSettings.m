@@ -56,6 +56,24 @@ static NSArray<NSDictionary *> *topArtists(NSDictionary *snapshot, NSUInteger li
     return top;
 }
 
+// "2:31" for a span of seconds — the journal reads in clock time, not the
+// "2 min" the totals use.
+static NSString *clockTime(NSTimeInterval seconds) {
+    NSInteger total = (NSInteger)seconds;
+    if (total >= 3600) return [NSString stringWithFormat:@"%ld:%02ld:%02ld",
+        (long)(total / 3600), (long)((total % 3600) / 60), (long)(total % 60)];
+    return [NSString stringWithFormat:@"%ld:%02ld", (long)(total / 60), (long)(total % 60)];
+}
+
+// When a journal entry began: the time of day, with the day once it is not
+// today any more.
+static NSString *journalWhen(NSTimeInterval when) {
+    NSDate *date = [NSDate dateWithTimeIntervalSince1970:when];
+    NSDateFormatter *format = [NSDateFormatter new];
+    format.dateFormat = [NSCalendar.currentCalendar isDateInToday:date] ? @"h:mm a" : @"MMM d, h:mm a";
+    return [format stringFromDate:date];
+}
+
 UIViewController *SGListeningStatsPage(void) {
     SGModRow *on = SGOptionRow(@"Listening stats", @"Counts time and plays on this phone only, in the app's own files. Nothing is sent anywhere.", SGKeyListeningStats);
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObject:SGSection(nil, @[on])];
@@ -135,10 +153,18 @@ UIViewController *SGListeningStatsPage(void) {
         ])];
         // Recently played (Batch 39): the same doors as the top songs,
         // in the order they were actually heard. Entries from before the
-        // stamp existed simply do not appear.
+        // stamp existed simply do not appear. The URI is stamped in as the
+        // entries are gathered (Batch 55): the stored entries do not carry
+        // their own key, and without it the rows looked like doors but
+        // opened nothing.
         NSMutableArray<NSDictionary *> *recent = [NSMutableArray array];
-        for (NSDictionary *entry in tracks.allValues) {
-            if ([entry[@"lastPlayed"] doubleValue] > 0) [recent addObject:entry];
+        for (NSString *uri in tracks) {
+            NSDictionary *stored = tracks[uri];
+            if ([stored[@"lastPlayed"] doubleValue] > 0) {
+                NSMutableDictionary *entry = [stored mutableCopy];
+                entry[@"uri"] = uri;
+                [recent addObject:entry];
+            }
         }
         [recent sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
             return [b[@"lastPlayed"] compare:a[@"lastPlayed"]];
@@ -155,6 +181,30 @@ UIViewController *SGListeningStatsPage(void) {
                 })];
             }
             [sections addObject:SGSection(@"Recently played", rows)];
+        }
+        // The playback journal (Batch 55): every play as it happened, with
+        // how much of it was heard — the diary under the aggregates. A play
+        // heard to (nearly) its end says so; one abandoned inside half a
+        // minute says that too, and everything between is left plain.
+        NSArray<NSDictionary *> *journal = SGStatsJournal();
+        if (journal.count) {
+            NSMutableArray<SGModRow *> *rows = [NSMutableArray array];
+            for (NSDictionary *play in [journal subarrayWithRange:NSMakeRange(0, MIN(journal.count, 12))]) {
+                NSString *title = [play[@"title"] length] ? play[@"title"] : @"Unknown track";
+                double heard = [play[@"seconds"] doubleValue];
+                double duration = [play[@"duration"] doubleValue];
+                NSString *detail = [NSString stringWithFormat:@"%@ · %@ heard",
+                    journalWhen([play[@"t"] doubleValue]), clockTime(heard)];
+                if (duration > 0 && heard >= duration * 0.9)
+                    detail = [detail stringByAppendingString:@" · Finished"];
+                else if (heard < 30)
+                    detail = [detail stringByAppendingString:@" · Skipped"];
+                NSString *uri = play[@"uri"];
+                [rows addObject:SGStatActionRow(title, play[@"artist"], ^NSString *{ return detail; }, ^{
+                    if (uri.length) SGOpenSpotifyURI([NSURL URLWithString:uri]);
+                })];
+            }
+            [sections addObject:SGSection(@"Playback journal", rows)];
         }
         NSArray<NSDictionary *> *songs = topTracks(snapshot, 10);
         if (songs.count) {
@@ -218,6 +268,16 @@ UIViewController *SGListeningStatsPage(void) {
                     NSString *title = [entry[@"title"] length] ? entry[@"title"] : @"Unknown track";
                     NSString *artist = [entry[@"artist"] length] ? [@" — " stringByAppendingString:entry[@"artist"]] : @"";
                     [lines addObject:[NSString stringWithFormat:@"· %@%@", title, artist]];
+                }
+            }
+            if (journal.count) {
+                [lines addObject:@""];
+                [lines addObject:@"Playback journal"];
+                for (NSDictionary *play in [journal subarrayWithRange:NSMakeRange(0, MIN(journal.count, 10))]) {
+                    NSString *title = [play[@"title"] length] ? play[@"title"] : @"Unknown track";
+                    NSString *artist = [play[@"artist"] length] ? [@" — " stringByAppendingString:play[@"artist"]] : @"";
+                    [lines addObject:[NSString stringWithFormat:@"· %@%@ (%@ heard)",
+                        title, artist, clockTime([play[@"seconds"] doubleValue])]];
                 }
             }
             UIPasteboard.generalPasteboard.string = [lines componentsJoinedByString:@"\n"];

@@ -58,6 +58,11 @@ void SGStatsCountPlay(NSString *uri, NSString *title, NSString *artist) {
     if (!uri.length) return;
     NSMutableDictionary *entry = entryFor(uri, title, artist);
     entry[@"plays"] = @([entry[@"plays"] doubleValue] + 1);
+    // When it was first played (Batch 55), stamped once: the discoveries
+    // list the research asked for is "first played this week", and the
+    // aggregate store could not answer it from lastPlayed alone.
+    if (![entry[@"firstPlayed"] isKindOfClass:NSNumber.class])
+        entry[@"firstPlayed"] = @(NSDate.date.timeIntervalSince1970);
     // When it was last played (Batch 39), for the stats page's Recently
     // played: the tops are all-time, but what someone opens the page for
     // is usually "what was that song from earlier".
@@ -122,7 +127,51 @@ void SGStatsAddListening(NSString *uri, NSTimeInterval seconds) {
     }
     NSMutableDictionary *entry = entryFor(uri, nil, nil);
     entry[@"seconds"] = @([entry[@"seconds"] doubleValue] + seconds);
+    // The same stretch lands on the journal entry it belongs to (Batch 55):
+    // plays are journaled as they start and the watcher flushes a stretch
+    // before the next play is counted, so the newest entry with this URI is
+    // the one that was playing. A stretch for a track with no entry (stats
+    // switched on mid-song) simply has nowhere to land.
+    NSMutableArray *journal = stats()[@"journal"];
+    if ([journal isKindOfClass:NSMutableArray.class]) {
+        for (NSMutableDictionary *play in journal.reverseObjectEnumerator) {
+            if ([play[@"uri"] isEqualToString:uri]) {
+                play[@"seconds"] = @([play[@"seconds"] doubleValue] + seconds);
+                break;
+            }
+        }
+    }
     save();
+}
+
+// One journal entry per counted play, newest kept to a cap: past a couple of
+// thousand plays the diary's beginning is archaeology, and the file is read
+// and written whole on every change, so its size is a real cost.
+static const NSUInteger kJournalCap = 2000;
+
+void SGStatsJournalPlay(NSString *uri, NSString *title, NSString *artist, NSTimeInterval duration) {
+    if (!uri.length) return;
+    NSMutableDictionary *all = stats();
+    NSMutableArray *journal = all[@"journal"];
+    if (![journal isKindOfClass:NSMutableArray.class]) {
+        journal = [NSMutableArray array];
+        all[@"journal"] = journal;
+    }
+    [journal addObject:[@{@"t": @(NSDate.date.timeIntervalSince1970),
+                          @"uri": uri,
+                          @"title": title ?: @"",
+                          @"artist": artist ?: @"",
+                          @"duration": @(duration),
+                          @"seconds": @0} mutableCopy]];
+    if (journal.count > kJournalCap)
+        [journal removeObjectsInRange:NSMakeRange(0, journal.count - kJournalCap)];
+    save();
+}
+
+NSArray<NSDictionary *> *SGStatsJournal(void) {
+    NSArray *journal = stats()[@"journal"];
+    if (![journal isKindOfClass:NSArray.class]) return @[];
+    return [journal reverseObjectEnumerator].allObjects;
 }
 
 NSDictionary *SGStatsSnapshot(void) {

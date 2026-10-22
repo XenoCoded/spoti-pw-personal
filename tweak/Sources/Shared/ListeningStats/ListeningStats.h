@@ -14,6 +14,16 @@ void SGStatsAddListening(NSString *uri, NSTimeInterval seconds);
 NSDictionary *SGStatsSnapshot(void);
 void SGStatsClear(void);
 
+// The playback journal (Batch 55): one entry per counted play — when it
+// started, what it was, how long it ran and how much of it was actually
+// heard (the seconds land through SGStatsAddListening, on the entry the URI
+// matches). Capped at the newest 2000; the raw material for the listening
+// clock and sessions the aggregates cannot answer after the fact.
+void SGStatsJournalPlay(NSString *uri, NSString *title, NSString *artist, NSTimeInterval duration);
+// Newest first copies of the journal entries: t (seconds since 1970), uri,
+// title, artist, duration and seconds, all numbers but the names.
+NSArray<NSDictionary *> *SGStatsJournal(void);
+
 // "3 h 25 min" for a count of seconds; the pages' way of writing a span out.
 NSString *SGStatsFormatTime(NSTimeInterval seconds);
 

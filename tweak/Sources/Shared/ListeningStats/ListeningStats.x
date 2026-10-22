@@ -33,6 +33,9 @@
     BOOL playing = uri != nil && !state.isPaused;
     if (playing && ![uri isEqualToString:self.countedURI]) {
         SGStatsCountPlay(uri, state.track.trackTitle, state.track.artistName);
+        // The journal entry for the same play (Batch 55): the duration is
+        // the state's, in seconds, the same one the Live Activity reads.
+        SGStatsJournalPlay(uri, state.track.trackTitle, state.track.artistName, state.duration);
         self.countedURI = uri;
     }
     if (!uri) self.countedURI = nil;

@@ -292,8 +292,11 @@ UIViewController *SGListeningStatsPage(void) {
             NSMutableArray<NSNumber *> *hours = [NSMutableArray array];
             for (NSInteger hour = 0; hour < 24; hour++)
                 if (hourPlays[hour] > 0) [hours addObject:@(hour)];
+            // A block cannot hold the array itself; it holds this pointer
+            // to it for the sort, which runs here and now.
+            double *secondsByHour = hourSeconds;
             [hours sortUsingComparator:^NSComparisonResult(NSNumber *a, NSNumber *b) {
-                return [@(hourSeconds[b.integerValue]) compare:@(hourSeconds[a.integerValue])];
+                return [@(secondsByHour[b.integerValue]) compare:@(secondsByHour[a.integerValue])];
             }];
             NSDateFormatter *hourFormat = [NSDateFormatter new];
             hourFormat.dateFormat = @"h a";

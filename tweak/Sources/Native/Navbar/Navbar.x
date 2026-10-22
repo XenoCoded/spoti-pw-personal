@@ -49,9 +49,17 @@ static UIView *iconView(NSString *name) {
     Class icon = NSClassFromString(@"SPTEncoreIcon");
     Class view = NSClassFromString(@"SPTEncoreIconView");
     SEL glyphSel = NSSelectorFromString(name.length ? name : @"star");
-    if (icon && view && [icon respondsToSelector:glyphSel]) {
+    // The name is free text from the Add Tab alert, and a class answers
+    // more than its glyphs: a name like "hash" passes a respondsToSelector
+    // check and would be invoked through the object-returning cast below,
+    // its NSUInteger read as a pointer. So the method must exist *and*
+    // return an object, and what comes back must know an icon's name.
+    Method glyphMethod = icon ? class_getClassMethod(icon, glyphSel) : NULL;
+    const char *glyphTypes = glyphMethod ? method_getTypeEncoding(glyphMethod) : NULL;
+    if (icon && view && glyphTypes && glyphTypes[0] == '@') {
         id (*glyphFor)(id, SEL) = (id (*)(id, SEL))objc_msgSend;
         id glyph = glyphFor(icon, glyphSel);
+        if (glyph && ![glyph respondsToSelector:@selector(name)]) glyph = nil;
         SPTEncoreIconView *encore = glyph ? [[view alloc] initWithIcon:glyph] : nil;
         if (encore) {
             [encore setForegroundColor:itemColor()];
@@ -350,7 +358,14 @@ void SGLogTabBarRow(UIView *tabBar) {
 - (NSArray *)items {
     NSArray *items = %orig;
     NSMutableString *out = [NSMutableString stringWithFormat:@"list read, %lu items", (unsigned long)items.count];
-    for (id item in items) [out appendFormat:@"\n  %@ · %@", [item valueForKey:@"title"], [item valueForKey:@"viewURI"]];
+    // A diagnostic read inside Spotify's own call: if a future build's
+    // items stop answering to these keys, valueForKey: raises, and the
+    // exception must not take Spotify's tab bar down with the log.
+    @try {
+        for (id item in items) [out appendFormat:@"\n  %@ · %@", [item valueForKey:@"title"], [item valueForKey:@"viewURI"]];
+    } @catch (NSException *e) {
+        [out appendFormat:@"\n  (an item would not say: %@)", e.name];
+    }
     static NSString *last;
     if (![out isEqualToString:last]) {
         last = [out copy];

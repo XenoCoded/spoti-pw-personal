@@ -17,18 +17,22 @@
 static __weak id sg_provider;
 
 // Called from wherever Spotify reaches for its provider, any thread.
-static void keepProvider(id provider) {
-    if (!provider || ![provider respondsToSelector:@selector(subscribeCollectionStateForURL:completion:)]) return;
+// Answers whether the provider is one that can be subscribed through:
+// the check used to be run and then ignored, and subscribe() sent the
+// message anyway.
+static BOOL keepProvider(id provider) {
+    if (!provider || ![provider respondsToSelector:@selector(subscribeCollectionStateForURL:completion:)]) return NO;
     static NSMutableSet<NSString *> *logged;
     @synchronized (NSObject.class) {
-        if (provider == sg_provider) return;
+        if (provider == sg_provider) return YES;
         sg_provider = provider;
         if (!logged) logged = [NSMutableSet set];
         NSString *name = NSStringFromClass([provider class]);
-        if ([logged containsObject:name]) return;
+        if ([logged containsObject:name]) return YES;
         [logged addObject:name];
     }
     SGLog(@"redesign artist: collection state from %@", NSStringFromClass([provider class]));
+    return YES;
 }
 
 static __weak id sg_platform;
@@ -40,7 +44,7 @@ static id currentProvider(void) {
     }
     if (!provider && [sg_platform respondsToSelector:@selector(stateProvider)]) {
         provider = [sg_platform performSelector:@selector(stateProvider)];
-        keepProvider(provider);
+        if (!keepProvider(provider)) provider = nil;
     }
     return provider;
 }
@@ -167,6 +171,7 @@ static NSURL *artistURI(UIView *page, NSString *moreIdentifier) {
 static void subscribe(SGRFollowWatch *watch, id provider) {
     Class stateClass = NSClassFromString(@"SPTCollectionPlatformState");
     if (![stateClass respondsToSelector:@selector(saved)]) return;
+    if (![provider respondsToSelector:@selector(subscribeCollectionStateForURL:completion:)]) return;
     id saved = [(Class<SGRCollectionState>)stateClass saved];
     __weak SGRFollowWatch *weakWatch = watch;
     NSURL *uri = watch.uri;

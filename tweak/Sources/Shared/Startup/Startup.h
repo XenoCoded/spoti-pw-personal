@@ -2,9 +2,9 @@
 // opens on its own home; the user asked for the choice — back where they left
 // off (the last playlist, album or artist that was playing), or a tab they
 // pick. The choice is a plain defaults integer, read at launch like the rest
-// of the mod's switches; "Last place" is remembered by the watcher in
-// Startup.x from the player state's own context URI, the same state the
-// stats and the Live Activity already read.
+// of the mod's switches; "Last place" is remembered by the watchers in
+// Startup.x — the player state's own context URI, and every navigation the
+// app makes through its link dispatcher.
 #import <UIKit/UIKit.h>
 
 #define SGKeyStartup @"spotifyglass.startup"

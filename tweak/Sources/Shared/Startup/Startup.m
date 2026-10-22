@@ -8,7 +8,7 @@
 
 SGModRow *SGStartupRow(void) {
     return SGChoiceRow(@"Opens to",
-        @"Where Spotify goes when it starts. Last place is the playlist, album or artist that was playing when it was last open.",
+        @"Where Spotify goes when it starts. Last place is the page you were last on, or what was playing when it was last open.",
         SGKeyStartup,
         @[@"Spotify decides", @"Last place", @"Home", @"Search", @"Your Library"],
         SGStartupSpotifyDecides);

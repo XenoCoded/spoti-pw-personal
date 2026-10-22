@@ -112,7 +112,7 @@ static UILabel *coverLabel(char *key, UIView *host, UIFont *font, UIColor *color
 %hook _TtC32Lyrics_FullscreenElementPageImpl10LyricsView
 - (void)didMoveToWindow {
     %orig;
-    if (self.window) sg_karaokeAppeared((UIView *)self);
+    if (((UIView *)self).window) sg_karaokeAppeared((UIView *)self);
     else sg_karaokeVanished((UIView *)self);
 }
 

@@ -290,15 +290,22 @@ static UIViewController *(^builderForPage(NSString *pageTitle))(void) {
     SGSearchEntry *entry = _shown[(NSUInteger)path.row];
     SGFillCell(cell, entry.row, [@"in " stringByAppendingString:entry.page], nil, nil);
     // The match lights up (Batch 35), the way every system search does it.
+    // The cell is drawn by its content configuration (SGFillCell), so the
+    // attributed title goes on the configuration: under a configuration the
+    // cell's own textLabel is nil, and reading its font put nil into a
+    // dictionary literal, which crashed the first matching keystroke.
     NSString *query = _bar.text;
     if (query.length) {
         NSRange hit = [entry.row.lowercaseString rangeOfString:query.lowercaseString];
         if (hit.location != NSNotFound) {
+            UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
             NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:entry.row
-                attributes:@{NSFontAttributeName: cell.textLabel.font}];
+                attributes:@{NSFontAttributeName: content.textProperties.font,
+                             NSForegroundColorAttributeName: content.textProperties.color}];
             [text addAttribute:NSFontAttributeName
-                         value:[UIFont boldSystemFontOfSize:cell.textLabel.font.pointSize] range:hit];
-            cell.textLabel.attributedText = text;
+                         value:[UIFont boldSystemFontOfSize:content.textProperties.font.pointSize] range:hit];
+            content.attributedText = text;
+            cell.contentConfiguration = content;
         }
     }
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;

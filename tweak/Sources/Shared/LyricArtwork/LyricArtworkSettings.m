@@ -79,11 +79,16 @@ static NSInteger styleForRow(NSInteger section, NSInteger row) {
         thumb.layer.cornerRadius = 6;
         thumb.backgroundColor = [UIColor colorWithWhite:0.12 alpha:1];
         [cell.contentView addSubview:thumb];
-        cell.textLabel.translatesAutoresizingMaskIntoConstraints = NO;
-        [NSLayoutConstraint activateConstraints:@[
-            [cell.textLabel.leadingAnchor constraintEqualToAnchor:thumb.trailingAnchor constant:14],
-            [cell.textLabel.centerYAnchor constraintEqualToAnchor:cell.contentView.centerYAnchor],
-        ]];
+        // The room for the thumbnail comes out of the configuration's
+        // leading margin: the cell's textLabel is nil under the content
+        // configuration SGFillCell installed, and anchoring constraints to
+        // it put nil into an array literal, which crashed the picker as it
+        // opened.
+        UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
+        NSDirectionalEdgeInsets margins = content.directionalLayoutMargins;
+        margins.leading = 94;   // 14 margin + 66 thumbnail + 14 gap
+        content.directionalLayoutMargins = margins;
+        cell.contentConfiguration = content;
     }
     thumb.image = _thumbs[@(style)];
     if (!thumb.image) {

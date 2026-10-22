@@ -2118,12 +2118,18 @@ UIImage *SGLyricArtworkSample(NSInteger style, CGSize size) {
     static MPMediaItemArtwork *cacheCover;
     MPMediaItemArtwork *coverNow;
     @synchronized (sg_lock) { coverNow = sg_cover; }
-    if (cacheCover != coverNow) {
-        cache = [NSMutableDictionary dictionary];
-        cacheCover = coverNow;
-    }
+    // The picker asks for its thumbnails from a concurrent queue, one per
+    // cell, so the cache's check, reset and store all sit under the same
+    // lock as the draw: outside it, two cells could grow the dictionary at
+    // once.
     NSString *cacheKey = [NSString stringWithFormat:@"%ld@%.0fx%.0f", (long)style, size.width, size.height];
-    if (cache[cacheKey]) return cache[cacheKey];
+    @synchronized (sg_lock) {
+        if (cacheCover != coverNow) {
+            cache = [NSMutableDictionary dictionary];
+            cacheCover = coverNow;
+        }
+        if (cache[cacheKey]) return cache[cacheKey];
+    }
     NSString *prev = @"we were running out of time";
     NSString *current = @"drive through the night with the windows down";
     NSString *next = @"till the city turns to light";
@@ -2143,7 +2149,9 @@ UIImage *SGLyricArtworkSample(NSInteger style, CGSize size) {
             drawn = drawLyricArtwork(size, prev, current, next, style, cover, nil, title, artist);
         }
     }
-    if (drawn) cache[cacheKey] = drawn;
+    if (drawn) {
+        @synchronized (sg_lock) { cache[cacheKey] = drawn; }
+    }
     return drawn;
 }
 

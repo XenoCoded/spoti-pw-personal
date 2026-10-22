@@ -5,6 +5,7 @@
 #import "Settings/SGPageStyle.h"
 #import "ListeningStats.h"
 #import "ChartCard.h"
+#import "HeatmapCard.h"
 #import "Shared/Player/Ratings.h"
 #import "Shared/Navigation/Links.h"
 
@@ -542,9 +543,15 @@ UIViewController *SGListeningStatsPage(void) {
             UIImage *image = SGChartCardImage();
             if (image) UIPasteboard.generalPasteboard.image = image;
         });
+        // The year at a glance (Batch 72): the same copy-as-image deal
+        // for the day buckets, drawn as a heatmap.
+        SGModRow *heatmap = SGStatActionRow(@"Copy year heatmap", nil, ^NSString *{ return @"Image"; }, ^{
+            UIImage *image = SGHeatmapCardImage();
+            if (image) UIPasteboard.generalPasteboard.image = image;
+        });
         SGModRow *clear = SGActionRow(@"Clear listening stats", nil, ^{ confirmClear(); });
         clear.color = SGRed();
-        [sections addObject:SGSection(nil, @[chart, export, clear])];
+        [sections addObject:SGSection(nil, @[chart, heatmap, export, clear])];
     }
     return [[SGModPage alloc] initWithTitle:@"Listening stats" intro:SGRestartNote sections:sections footer:nil];
 }

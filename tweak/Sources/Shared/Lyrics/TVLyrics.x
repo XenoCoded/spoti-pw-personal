@@ -116,7 +116,13 @@ static void refresh(void) {
 }
 @end
 
+// Held in a static: the observer registry is weak (PlayerState.x), so a
+// bare temporary deallocates as the constructor returns — toggling the
+// big screen after launch neither started nor stopped the server.
+static SGTVLyricsWatcher *sg_watcher;
+
 %ctor {
-    SGAddPlayerStateObserver([SGTVLyricsWatcher new]);
+    sg_watcher = [SGTVLyricsWatcher new];
+    SGAddPlayerStateObserver(sg_watcher);
     refresh();
 }

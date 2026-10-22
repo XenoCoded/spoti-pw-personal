@@ -30,7 +30,13 @@
 
 @end
 
+// Held in a static: the observer registry is weak (PlayerState.x), so a
+// bare temporary deallocates as the constructor returns and the watcher
+// never hears a thing — the bin never skipped a track.
+static SGTrackBinWatcher *sg_watcher;
+
 %ctor {
-    SGAddPlayerStateObserver([SGTrackBinWatcher new]);
+    sg_watcher = [SGTrackBinWatcher new];
+    SGAddPlayerStateObserver(sg_watcher);
     SGLog(@"trash bin: watching");
 }

@@ -121,7 +121,14 @@ static void refresh(void) {
 }
 @end
 
+// Held in a static: the observer registry is weak (PlayerState.x), so a
+// bare temporary deallocates as the constructor returns — after launch,
+// putting AirPods in never started motion and turning the switch off
+// never stopped it.
+static SGHeadGestureWatcher *sg_watcher;
+
 %ctor {
-    SGAddPlayerStateObserver([SGHeadGestureWatcher new]);
+    sg_watcher = [SGHeadGestureWatcher new];
+    SGAddPlayerStateObserver(sg_watcher);
     refresh();
 }

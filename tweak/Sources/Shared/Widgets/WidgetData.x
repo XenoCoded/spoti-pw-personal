@@ -14,8 +14,15 @@
 }
 @end
 
+// Held in a static: the observer registry is weak (PlayerState.x), so a
+// bare temporary deallocates as the constructor returns and the widgets
+// were left to the slow timer alone — stale by up to twenty seconds, or
+// for good while paused.
+static SGWidgetWatcher *sg_watcher;
+
 %ctor {
-    SGAddPlayerStateObserver([SGWidgetWatcher new]);
+    sg_watcher = [SGWidgetWatcher new];
+    SGAddPlayerStateObserver(sg_watcher);
     dispatch_async(dispatch_get_main_queue(), ^{
         NSTimer *timer = [NSTimer timerWithTimeInterval:20 repeats:YES block:^(NSTimer *t) {
             if (!SGPlayerState().isPaused) SGWidgetDataWrite();

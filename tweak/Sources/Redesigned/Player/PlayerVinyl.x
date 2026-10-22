@@ -110,6 +110,10 @@ static UIView *makeDisc(CGFloat diameter) {
 }
 
 static void refreshTilts(void) {
+    // Nothing tracked, nothing to do — the common case with the switch
+    // off, since the layout hook only tracks a tilt when there is a disc
+    // to manage or the switch is on.
+    if (sg_vinylTilts.count == 0) return;
     BOOL vinyl = SGFlag(SGKeyVinyl, NO);
     SPTPlayerState *state = SGPlayerState();
     NSString *uri = SGURIString(state.track.URI);
@@ -118,6 +122,7 @@ static void refreshTilts(void) {
             UIView *dead = discFor(tilt);
             [dead removeFromSuperview];
             objc_setAssociatedObject(tilt, &kDiscKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            [sg_vinylTilts removeObject:tilt];
             continue;
         }
         UIView *cover = vinylCoverIn(tilt);
@@ -129,6 +134,7 @@ static void refreshTilts(void) {
                 objc_setAssociatedObject(tilt, &kDiscKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             }
             if (cover) cover.alpha = 1;
+            [sg_vinylTilts removeObject:tilt];
             continue;
         }
         if (cover) cover.alpha = 0;
@@ -165,6 +171,10 @@ static void refreshTilts(void) {
     %orig;
     UIView *tilt = (UIView *)self;
     if (tilt.bounds.size.width < kMinTiltWidth || !inCoverCell(tilt)) return;
+    // Off and nothing to clean up: skip the view-tree walk entirely.
+    // A disc left behind by a recent toggle-off still takes the road
+    // below, which removes it.
+    if (!discFor(tilt) && !SGFlag(SGKeyVinyl, NO)) return;
     if (!vinylCoverIn(tilt) && !discFor(tilt)) return;
     [sg_vinylTilts addObject:tilt];
     UIView *disc = discFor(tilt);

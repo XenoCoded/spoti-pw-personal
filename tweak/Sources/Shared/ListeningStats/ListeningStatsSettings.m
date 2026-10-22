@@ -275,6 +275,71 @@ UIViewController *SGListeningStatsPage(void) {
             }
             [sections addObject:SGSection(@"Playback journal", rows)];
         }
+        // Skip & completion (Batch 80): the journal already stamps each
+        // play Finished or Skipped, so the tallies cost nothing new.
+        // Finished means at least 90% of the track was heard; skipped
+        // means under 30 seconds. The completion rate is heard seconds
+        // over started seconds, by the clock.
+        NSString *skipExportLine = nil;
+        if (journal.count) {
+            NSInteger finished = 0, skipped = 0;
+            double heard = 0, started = 0;
+            NSMutableDictionary<NSString *, NSMutableDictionary *> *skipTally = [NSMutableDictionary dictionary];
+            for (NSDictionary *play in journal) {
+                double secs = [play[@"seconds"] doubleValue];
+                double duration = [play[@"duration"] doubleValue];
+                heard += secs;
+                if (duration > 0) started += duration;
+                if (duration > 0 && secs >= duration * 0.9) {
+                    finished++;
+                } else if (secs < 30) {
+                    skipped++;
+                    NSString *uri = play[@"uri"];
+                    if (uri.length) {
+                        NSMutableDictionary *entry = skipTally[uri];
+                        if (!entry) {
+                            entry = [@{@"count": @0,
+                                       @"title": [play[@"title"] length] ? play[@"title"] : @"Unknown track",
+                                       @"artist": play[@"artist"] ?: @"",
+                                       @"uri": uri} mutableCopy];
+                            skipTally[uri] = entry;
+                        }
+                        entry[@"count"] = @([entry[@"count"] integerValue] + 1);
+                    }
+                }
+            }
+            NSDictionary *mostSkipped = nil;
+            for (NSDictionary *entry in skipTally.allValues) {
+                if (!mostSkipped || [entry[@"count"] integerValue] > [mostSkipped[@"count"] integerValue])
+                    mostSkipped = entry;
+            }
+            NSMutableArray<SGModRow *> *skipRows = [NSMutableArray array];
+            [skipRows addObject:SGStatRow(@"Finished", ^NSString *{
+                return [NSString stringWithFormat:@"%ld of %ld plays (%ld%%)",
+                    (long)finished, (long)journal.count,
+                    (long)lround(100.0 * finished / journal.count)];
+            })];
+            [skipRows addObject:SGStatRow(@"Skipped", ^NSString *{
+                return [NSString stringWithFormat:@"%ld of %ld plays (%ld%%)",
+                    (long)skipped, (long)journal.count,
+                    (long)lround(100.0 * skipped / journal.count)];
+            })];
+            [skipRows addObject:SGStatRow(@"Completion rate", ^NSString *{
+                if (started <= 0) return @"—";
+                return [NSString stringWithFormat:@"%ld%%", (long)lround(100.0 * heard / started)];
+            })];
+            NSString *mostURI = mostSkipped[@"uri"];
+            [skipRows addObject:SGStatActionRow(@"Most skipped",
+                mostSkipped ? mostSkipped[@"title"] : @"None yet",
+                ^NSString *{ return mostSkipped ? [NSString stringWithFormat:@"%@ skips", mostSkipped[@"count"]] : @"—"; },
+                ^{
+                    if (mostURI.length) SGOpenSpotifyURI([NSURL URLWithString:mostURI]);
+                })];
+            [sections addObject:SGSection(@"Skip & completion", skipRows)];
+            skipExportLine = [NSString stringWithFormat:@"Finished: %ld plays · Skipped: %ld plays · Completion: %@",
+                (long)finished, (long)skipped,
+                started > 0 ? [NSString stringWithFormat:@"%ld%%", (long)lround(100.0 * heard / started)] : @"—"];
+        }
         // Listening clock (Batch 60): the journal binned by the hour each
         // play started — when the listening actually happens. Ten plays is
         // the floor for calling it a pattern. The top hour's name is kept
@@ -474,6 +539,7 @@ UIViewController *SGListeningStatsPage(void) {
             [lines addObject:[NSString stringWithFormat:@"Day streak: %ld days", (long)streak]];
             if (biggestKey) [lines addObject:[NSString stringWithFormat:@"Biggest day: %@", biggestText]];
             [lines addObject:[NSString stringWithFormat:@"Week over week: %@", wowText]];
+            if (skipExportLine) [lines addObject:skipExportLine];
             if (peakHourText) [lines addObject:[NSString stringWithFormat:@"Peak hour: %@", peakHourText]];
             [lines addObject:[NSString stringWithFormat:@"Songs played: %ld", (long)plays]];
             [lines addObject:@""];

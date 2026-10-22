@@ -175,7 +175,7 @@ static void crop(AVURLAsset *asset, AVAssetTrack *track, NSURL *into, CGFloat as
     export.outputFileType = AVFileTypeMPEG4;
     export.videoComposition = composition;
     [export exportAsynchronouslyWithCompletionHandler:^{
-        BOOL ok = export.status == AVAssetExportSessionStatusCompleted;
+        __block BOOL ok = export.status == AVAssetExportSessionStatusCompleted;
         dispatch_async(queue(), ^{
             if (ok) {
                 [NSFileManager.defaultManager removeItemAtURL:into error:nil];

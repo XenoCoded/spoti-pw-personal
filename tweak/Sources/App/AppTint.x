@@ -55,17 +55,25 @@ static void refreshTintSoon(void) {
 }
 
 // Every window again: a new song's colour is only worth having if the
-// controls already on screen take it too.
+// controls already on screen take it too. The walk runs inside an
+// animation block (Batch 77): window tint and the colours UIKit
+// derives from it cross-fade to the new song's colour instead of
+// snapping; the few control colours that cannot animate (a switch's
+// on-tint) simply change, the way they always did.
 static void refreshTint(void) {
     UIColor *color = SGAppTintColor();
     if (!color) return;
-    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (![scene isKindOfClass:UIWindowScene.class]) continue;
-        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
-            window.tintColor = color;
-            tintTree(window, color);
+    [UIView animateWithDuration:0.6 delay:0
+                        options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
+                     animations:^{
+        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+            if (![scene isKindOfClass:UIWindowScene.class]) continue;
+            for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+                window.tintColor = color;
+                tintTree(window, color);
+            }
         }
-    }
+    } completion:nil];
 }
 
 %hook UISwitch

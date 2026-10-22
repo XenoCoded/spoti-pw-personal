@@ -23,6 +23,7 @@ static void disarm(void) {
     [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeySleepTimerEnd];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeySleepTimerArmed];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeySleepTimerTrack];
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeySleepTimerLeft];
 }
 
 // Two paces (Batch 21 audit): an NSTimer cannot change its interval, so the
@@ -51,13 +52,36 @@ static void timerUp(id<SPTPlayer> player) {
 static void check(void) {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     NSInteger choice = [defaults integerForKey:SGKeySleepTimer];
+    id<SPTPlayer> player = SGKaraokePlayer();
+    // Stop when the queue ends (Batch 56): a standing rule beside the
+    // countdown, watched on the same tick. The last song of the queue is
+    // playing, nothing is lined up behind it, and repeat is off — when it
+    // reaches its end, pause there instead of letting Spotify roll into
+    // its own picks. Once paused the state says so, and the rule rests.
+    BOOL queueEndNear = NO;
+    if (SGFlag(SGKeyStopAtQueueEnd, NO) && player.state) {
+        SPTPlayerState *state = player.state;
+        if (!state.isPaused && state.future.count == 0
+            && !state.options.repeatingContext && !state.options.repeatingTrack) {
+            double duration = [state respondsToSelector:@selector(duration)] ? state.duration : 0;
+            NSInteger position = SGKaraokePositionMs();
+            // Fast pace only for the last half minute; before that the
+            // idle tick is soon enough to notice the moment coming.
+            queueEndNear = duration > 0 && position >= 0 && duration * 1000 - position < 30000;
+            if (queueEndNear && duration * 1000 - position < kEndOfTrackMs) {
+                [player pause:nil];
+                SGLog(@"queue end: paused at the end of the queue");
+            }
+        }
+    }
     if (choice <= 0) {
         if ([defaults objectForKey:SGKeySleepTimerEnd] || [defaults objectForKey:SGKeySleepTimerTrack]) disarm();
-        setPace(NO);
+        // The queue-end rule needs the fast pace while its moment is
+        // anywhere near; the rest of the time it can tick with the idle.
+        setPace(queueEndNear);
         return;
     }
     setPace(YES);
-    id<SPTPlayer> player = SGKaraokePlayer();
     if (!player) return;
     if (choice == 5) {
         // End of track: remember the track it was set on; a different one
@@ -75,7 +99,42 @@ static void check(void) {
         if (up) timerUp(player);
         return;
     }
-    if (choice > 5) return;
+    if (choice >= 6) {
+        // After N tracks (Batch 56): how many are left, the current one
+        // included, lives in the defaults beside the track being counted
+        // on, so the promise survives the app being swiped away. A new
+        // track spends one; the last one's end is watched the way end of
+        // track watches it, and slipping past that end unwatched still
+        // counts as up.
+        static const NSInteger kCounts[] = {0, 0, 0, 0, 0, 0, 2, 3, 5};
+        if (choice >= (NSInteger)(sizeof(kCounts) / sizeof(kCounts[0]))) return;
+        NSInteger left = [defaults integerForKey:SGKeySleepTimerLeft];
+        NSString *trackID = SGKaraokePlayingTrack();
+        NSString *counted = [defaults stringForKey:SGKeySleepTimerTrack];
+        // Armed for a different choice is not armed at all — the same
+        // rule the spans keep with their own armed key.
+        if (left <= 0 || !counted.length || [defaults integerForKey:SGKeySleepTimerArmed] != choice) {
+            if (trackID) {
+                [defaults setInteger:kCounts[choice] forKey:SGKeySleepTimerLeft];
+                [defaults setObject:trackID forKey:SGKeySleepTimerTrack];
+                [defaults setInteger:choice forKey:SGKeySleepTimerArmed];
+            }
+            return;
+        }
+        if (trackID && ![trackID isEqualToString:counted]) {
+            if (left <= 1) { timerUp(player); return; }
+            [defaults setInteger:left - 1 forKey:SGKeySleepTimerLeft];
+            [defaults setObject:trackID forKey:SGKeySleepTimerTrack];
+            return;
+        }
+        if (left == 1) {
+            double duration = [player.state respondsToSelector:@selector(duration)] ? player.state.duration : 0;
+            NSInteger position = SGKaraokePositionMs();
+            if (!trackID || (duration > 0 && position >= 0 && duration * 1000 - position < kEndOfTrackMs))
+                timerUp(player);
+        }
+        return;
+    }
     NSInteger armed = [defaults integerForKey:SGKeySleepTimerArmed];
     double end = [defaults doubleForKey:SGKeySleepTimerEnd];
     if (armed != choice || end <= 0) {

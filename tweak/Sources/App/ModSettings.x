@@ -20,6 +20,7 @@
 #import "Shared/Privacy/Privacy.h"
 #import "Shared/Flags/Flags.h"
 #import "Shared/AudioEffects/AudioEffectsPage.h"
+#import "Shared/AudioEffects/EQProfiles.h"
 #import "Shared/Gestures/Gestures.h"
 #import "Shared/LiveActivity/LiveActivity.h"
 #import "Shared/Player/PlayerSettings.h"
@@ -52,6 +53,10 @@ static UIViewController *modSettingsPage(void) {
     // The audio effects work on the sound, so both looks have them, with what they are doing beside the chevron.
     SGModRow *audioEffects = pageRow(@"Audio effects", @"slider.vertical.3", ^UIViewController *{ return SGDSPSettingsPage(); });
     audioEffects.value = ^NSString *{ return SGDSPSummary(); };
+    // EQ by output (Batch 79): the profiles ride beside the effects
+    // they shape, one tap from the root like everything else here.
+    SGModRow *eqProfiles = pageRow(@"EQ by output", @"hifispeaker.2", ^UIViewController *{ return SGEQProfilesSettingsPage(); });
+    eqProfiles.value = ^NSString *{ return SGFlag(SGKeyDSPAutoEQ, NO) ? SGEQRouteClassName(SGEQCurrentRouteClass()) : @"Off"; };
     // Home & Library holds only the native look's switches, so the redesign has no such page; the
     // Live Activity works under both, and only where ActivityKit's card does.
     // Batch 9: one tap from here to everything. Lyrics, Gestures and the Lock
@@ -65,6 +70,7 @@ static UIViewController *modSettingsPage(void) {
         pageRow(@"Gestures", @"hand.tap", ^UIViewController *{ return SGGesturesSettingsPage(); }),
         pageRow(@"Lock screen", @"lock", ^UIViewController *{ return SGLockScreenSettingsPage(); }),
         audioEffects,
+        eqProfiles,
     ]];
     if (!SGRedesignedUIStored()) [parts addObject:pageRow(@"Home & Library", @"house", ^UIViewController *{ return SGHomeSettingsPage(); })];
     NSArray<SGModRow *> *privacy = @[

@@ -17,6 +17,11 @@
 #define SGKeyLyricArtworkShuffle @"spotifyglass.lyricArtwork.shuffle"
 // The Chat style's room: 0 Light, 1 Dark, 2 System (Batch 97).
 #define SGKeyLyricArtworkChatTheme @"spotifyglass.lyricArtwork.chatTheme"
+// How the sung words advance in a still: 0 Smooth (re-offered on every
+// word), 1 Standard (when the system asks), 2 Off (whole line lit) (Batch 98).
+#define SGKeyLyricArtworkWordTiming @"spotifyglass.lyricArtwork.wordTiming"
+// The built-in styles' finish: 0 Original, 1 Dark, 2 Accent gradient (Batch 98).
+#define SGKeyLyricArtworkFinish @"spotifyglass.lyricArtwork.finish"
 
 typedef NS_ENUM(NSInteger, SGLyricArtworkStyle) {
     SGLyricArtworkPoster = 0,   // the cover behind, darkened, the lines over it

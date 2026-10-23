@@ -149,6 +149,12 @@ static NSAttributedString *sungLine(SGKaraokeLine *line, NSString *text, UIFont 
     [out addAttributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: pending}
                  range:NSMakeRange(0, out.length)];
     if (!line || !out.length) return out;
+    // Word timing off (Batch 98): the whole line lit, no sweep to
+    // follow — the still then only ever changes per line.
+    if (SGInt(SGKeyLyricArtworkWordTiming, 0) == 2) {
+        [out addAttribute:NSForegroundColorAttributeName value:sung range:NSMakeRange(0, out.length)];
+        return out;
+    }
     // While a clip renders (LyricClip), the position is the frame's, not the
     // player's: the sweep is drawn where the frame sits inside the line.
     NSInteger position = sg_frameTime >= 0 ? line.start + (NSInteger)(sg_frameTime * 1000) : SGKaraokePositionMs();
@@ -258,6 +264,27 @@ static UIImage *recordDiscImage(CGFloat diameter, UIImage *cover) {
     }];
 }
 
+// The accent's gradient, laid over a frame: the colour lifted at the
+// top, its own deep shade at the foot — the wash the app puts on its
+// accents, shared by the Gradient line and the finish setting.
+static void drawAccentGradient(CGSize size, UIColor *base, CGFloat alpha) {
+    if (!base) return;
+    CGFloat hue = 0, saturation = 0, brightness = 0;
+    [base getHue:&hue saturation:&saturation brightness:&brightness alpha:NULL];
+    UIColor *deep = [UIColor colorWithHue:hue saturation:MIN(1, saturation + 0.1)
+                               brightness:brightness * 0.45 alpha:1];
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGContextSaveGState(ctx);
+    CGContextSetAlpha(ctx, alpha);
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    NSArray *colors = @[(id)base.CGColor, (id)deep.CGColor];
+    CGGradientRef gradient = CGGradientCreateWithColors(space, (__bridge CFArrayRef)colors, NULL);
+    CGContextDrawLinearGradient(ctx, gradient, CGPointMake(0, 0), CGPointMake(0, size.height), 0);
+    CGGradientRelease(gradient);
+    CGColorSpaceRelease(space);
+    CGContextRestoreGState(ctx);
+}
+
 static UIImage *drawRecordArtwork(CGSize size, NSString *prev, NSString *current, NSString *next,
                                   UIImage *cover, SGKaraokeLine *line, NSString *title, NSString *artist) {
     UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
@@ -271,6 +298,15 @@ static UIImage *drawRecordArtwork(CGSize size, NSString *prev, NSString *current
         if (average) {
             [[average colorWithAlphaComponent:0.13] setFill];
             UIRectFill(CGRectMake(0, 0, size.width, size.height));
+        }
+        // The finish (Batch 98): the room darkened, or the flat tint
+        // traded for the accent's gradient under the disc.
+        NSInteger finish = SGInt(SGKeyLyricArtworkFinish, 0);
+        if (finish == 1) {
+            [[UIColor colorWithWhite:0 alpha:0.30] setFill];
+            UIRectFill(CGRectMake(0, 0, size.width, size.height));
+        } else if (finish == 2 && average) {
+            drawAccentGradient(size, lifted(average), 0.45);
         }
         CGFloat diameter = size.width * 0.60;
         CGRect disc = CGRectMake((size.width - diameter) / 2, size.height * 0.06, diameter, diameter);
@@ -1293,12 +1329,20 @@ static void drawCyberpunk(SGWCtx *c) {
     UIFont *font = monoFont(size.height * 0.027, UIFontWeightRegular);
     UIFont *nowFont = monoFont(size.height * 0.030, UIFontWeightBold);
     NSInteger starts[3] = {c->prevStart, c->line.start, c->nextStart};
+    // The inks live in strong locals first (Batch 98): the rows struct
+    // holds its fields unretained, and inline colour temporaries in the
+    // initializer died before the loop drew with them — the picker's
+    // scroll crash, an NSArray sitting in a dead colour's slot by the
+    // time CoreText asked it for a CGColor.
+    UIColor *inkPrev = [UIColor colorWithWhite:1 alpha:0.75];
+    UIColor *inkNow = [UIColor colorWithWhite:0.02 alpha:1];
+    UIColor *inkNext = [UIColor colorWithWhite:1 alpha:0.55];
     // Incoming outlined bubbles for what was sung, a filled one for the line,
     // an outlined one for what is next.
     struct { __unsafe_unretained NSString *text; __unsafe_unretained UIFont *font; __unsafe_unretained UIColor *fill; __unsafe_unretained UIColor *stroke; __unsafe_unretained UIColor *ink; BOOL right; } rows[3] = {
-        {c->prev, font, nil, neon, [UIColor colorWithWhite:1 alpha:0.75], NO},
-        {c->current, nowFont, green, nil, [UIColor colorWithWhite:0.02 alpha:1], YES},
-        {c->next, font, nil, neon, [UIColor colorWithWhite:1 alpha:0.55], NO},
+        {c->prev, font, nil, neon, inkPrev, NO},
+        {c->current, nowFont, green, nil, inkNow, YES},
+        {c->next, font, nil, neon, inkNext, NO},
     };
     for (int i = 0; i < 3; i++) {
         if (!rows[i].text.length) continue;
@@ -1743,10 +1787,15 @@ static void drawReceipt(SGWCtx *c) {
     };
     dashed(y);
     y += size.height * 0.02;
+    // The fonts are strong locals for the same reason as Cyberpunk's
+    // inks (Batch 98): the struct's fields are unretained, and a font
+    // built inline in the initializer is a temporary with no owner.
+    UIFont *itemFont = monoFont(size.height * 0.017, UIFontWeightRegular);
+    UIFont *itemNowFont = monoFont(size.height * 0.019, UIFontWeightBold);
     struct { __unsafe_unretained NSString *text; NSInteger start; __unsafe_unretained UIFont *font; __unsafe_unretained UIColor *color; } items[3] = {
-        {c->prev, c->prevStart, monoFont(size.height * 0.017, UIFontWeightRegular), grey},
-        {c->current, c->line.start, monoFont(size.height * 0.019, UIFontWeightBold), ink},
-        {c->next, c->nextStart, monoFont(size.height * 0.017, UIFontWeightRegular), grey},
+        {c->prev, c->prevStart, itemFont, grey},
+        {c->current, c->line.start, itemNowFont, ink},
+        {c->next, c->nextStart, itemFont, grey},
     };
     for (int i = 0; i < 3; i++) {
         if (!items[i].text.length) continue;
@@ -2881,6 +2930,19 @@ static UIImage *drawLyricArtwork(CGSize size, NSString *prev, NSString *current,
             [UIColor.blackColor setFill];
             UIRectFill(full);
         }
+        // The finish (Batch 98): Dark deepens whatever ground the style
+        // laid; Accent gradient washes it in the accent's own gradient,
+        // under the words either way.
+        NSInteger finish = SGInt(SGKeyLyricArtworkFinish, 0);
+        if (finish == 1) {
+            [[UIColor colorWithWhite:0 alpha:0.35] setFill];
+            UIRectFill(full);
+        } else if (finish == 2) {
+            // lifted() answers white for nil, so the base is only
+            // taken when a colour actually exists.
+            UIColor *coverAverage = accent ? nil : averageColor(cover);
+            drawAccentGradient(size, accent ?: (coverAverage ? lifted(coverAverage) : nil), 0.5);
+        }
         CGFloat floor = size.height * 0.74;
         CGFloat y = size.height * 0.10;
         if ((style == SGLyricArtworkAura || style == SGLyricArtworkGradient) && title.length) {
@@ -2956,10 +3018,16 @@ static BOOL powerThrifty(void) {
 // The clip's size and rate, from the quality choice: Saver for the battery,
 // Max for the full 900x1200 the stills use, Balanced between.
 static void clipSpec(CGSize *size, NSInteger *fps) {
+    // One size at every level — the stills' (Batch 98). The levels used
+    // to shrink the picture as well as the frame rate, and the lock
+    // screen's expanded view re-fit the artwork each time it swapped
+    // between the still and a smaller clip: the small-then-big pulse.
+    // Quality is frame rate only now.
+    *size = CGSizeMake(900, 1200);
     switch (effectiveQuality()) {
-        case 0: *size = CGSizeMake(540, 720); *fps = 15; break;
-        case 2: *size = CGSizeMake(900, 1200); *fps = 24; break;
-        default: *size = CGSizeMake(720, 960); *fps = 20; break;
+        case 0: *fps = 15; break;
+        case 2: *fps = 24; break;
+        default: *fps = 20; break;
     }
 }
 
@@ -3206,6 +3274,53 @@ static void prefetchNext(void) {
     }
 }
 
+static void tick(void);
+
+// Where the sweep stands inside a line, as one number that changes
+// only when the lit part does: the count of words already begun, or —
+// for a line timed only as a whole — which eighth of it has passed.
+static NSInteger sweepStep(SGKaraokeLine *line, NSInteger position) {
+    if (!line || position < line.start) return -1;
+    if (line.words.count) {
+        NSInteger step = 0;
+        for (SGKaraokeWord *word in line.words) if (word.start <= position) step++;
+        return step;
+    }
+    if (line.end > line.start) {
+        CGFloat fraction = (CGFloat)(position - line.start) / (CGFloat)(line.end - line.start);
+        return (NSInteger)(MIN(1, MAX(0, fraction)) * 8);
+    }
+    return 0;
+}
+
+// Smooth word timing's metronome: a one-shot timer for the moment the
+// next word begins, so the still is re-offered on the word instead of
+// whenever the half-second tick happens to land. Re-arming for the
+// identical position (a paused song) is a no-op, so a frozen position
+// can't spin it.
+static NSTimer *sg_wordTimer;
+static NSInteger sg_sweepStep = -1;
+static NSInteger sg_armPosition = -2;
+static void armWordTimer(SGKaraokeLine *line, NSInteger position) {
+    if (sg_wordTimer) { [sg_wordTimer invalidate]; sg_wordTimer = nil; }
+    if (!line || position == sg_armPosition) return;
+    NSInteger nextAt = line.end;
+    if (line.words.count) {
+        for (SGKaraokeWord *word in line.words) if (word.start > position) { nextAt = word.start; break; }
+    } else if (line.end > line.start) {
+        NSInteger span = line.end - line.start;
+        nextAt = line.start + ((position - line.start) * 8 / span + 1) * span / 8;
+        if (nextAt > line.end) nextAt = line.end;
+    }
+    NSInteger delta = nextAt - position;
+    if (delta < 40) delta = 40;
+    if (delta > 10000) return;
+    sg_armPosition = position;
+    sg_wordTimer = [NSTimer timerWithTimeInterval:delta / 1000.0 repeats:NO
+                                            block:^(NSTimer *t) { tick(); }];
+    [NSRunLoop.mainRunLoop addTimer:sg_wordTimer forMode:NSRunLoopCommonModes];
+}
+
 static void tick(void) {
     prefetchNext();
     NSString *trackID = SGKaraokePlayingTrack();
@@ -3239,8 +3354,29 @@ static void tick(void) {
         style = rolled;
     }
     NSString *key = [NSString stringWithFormat:@"%@/%ld/%ld", trackID, (long)index, (long)style];
-    if ([key isEqualToString:sg_lineKey]) return;
-    sg_lineKey = key;
+    BOOL lineChanged = ![key isEqualToString:sg_lineKey];
+    NSInteger wordTiming = SGInt(SGKeyLyricArtworkWordTiming, 0);
+    SGKaraokeLine *lead = (index >= 0 && index < (NSInteger)lines.count) ? lines[index] : nil;
+    if (!lineChanged) {
+        // The same line, still playing: only Smooth word timing has
+        // anything to do — re-offer the still when the sweep crosses
+        // into the next word, so the words light on their own beats
+        // instead of in chunks whenever the system happened to ask
+        // for a fresh picture (Batch 98).
+        if (wordTiming != 0 || !lead) {
+            if (wordTiming != 0 && sg_wordTimer) { [sg_wordTimer invalidate]; sg_wordTimer = nil; }
+            return;
+        }
+        NSInteger step = sweepStep(lead, position);
+        if (step == sg_sweepStep) {
+            armWordTimer(lead, position);
+            return;
+        }
+        sg_sweepStep = step;
+    } else {
+        sg_lineKey = key;
+        sg_sweepStep = sweepStep(lead, position);
+    }
 
     NSString *current = index >= 0 ? SGKaraokeLineText(lines[index]) : @"♪";
     NSString *prev = index > 0 ? SGKaraokeLineText(lines[index - 1]) : @"";
@@ -3279,11 +3415,14 @@ static void tick(void) {
             }
         }];
     @synchronized (sg_lockObject()) { sg_artwork = fresh; }
-    offerClip(key, style, line, prev, current, next, cover, title, artist,
-              lineIndex, lineCount, prevStart, nextStart, duration);
-    warmClips(trackID, lines, index, style, cover, title, artist, duration);
-    SGLog(@"lyric artwork: %@ — %@", trackID, current);
+    if (lineChanged) {
+        offerClip(key, style, line, prev, current, next, cover, title, artist,
+                  lineIndex, lineCount, prevStart, nextStart, duration);
+        warmClips(trackID, lines, index, style, cover, title, artist, duration);
+        SGLog(@"lyric artwork: %@ — %@", trackID, current);
+    }
     resend();
+    if (wordTiming == 0) armWordTimer(line, SGKaraokePositionMs());
 }
 
 // A style drawn once with sample facts, for the picker's thumbnails: the

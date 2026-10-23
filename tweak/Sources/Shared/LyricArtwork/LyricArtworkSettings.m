@@ -148,13 +148,21 @@ NSArray<SGModRow *> *SGLyricArtworkRows(void) {
         SGKeyLyricArtworkAnimated);
     animated.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO); };
     SGModRow *quality = SGChoiceRow(@"Clip quality",
-        @"Saver renders smaller and slower for the battery; Max matches the stills' full size. Changing it re-renders clips at the new quality.",
+        @"Saver animates at fewer frames per second for the battery; Max is the smoothest. The picture is the stills' full size at every level, so the lock screen never resizes it. Changing it re-renders clips at the new quality.",
         SGKeyLyricArtworkClipQuality, @[@"Saver", @"Balanced", @"Max"], 1);
     quality.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO) && SGFlag(SGKeyLyricArtworkAnimated, NO); };
     SGModRow *chatTheme = SGChoiceRow(@"Chat theme",
         @"For the Chat style: the room the conversation sits in — iMessage's light room, its dark one, or whichever the phone is using.",
         SGKeyLyricArtworkChatTheme, @[@"Light", @"Dark", @"System"], 0);
     chatTheme.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO); };
+    SGModRow *wordTiming = SGChoiceRow(@"Word timing",
+        @"How the sung words light up. Smooth follows every word; Standard updates when the system asks; Off lights the whole line and updates the least — the battery choice.",
+        SGKeyLyricArtworkWordTiming, @[@"Smooth", @"Standard", @"Off"], 0);
+    wordTiming.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO); };
+    SGModRow *finish = SGChoiceRow(@"Finish (built-in styles)",
+        @"For Poster, Plain & bold, Aura and Record: the original look, a darkened one, or washed in the accent gradient the app puts on its accents.",
+        SGKeyLyricArtworkFinish, @[@"Original", @"Dark", @"Accent gradient"], 0);
+    finish.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO); };
     SGModRow *shuffle = SGSwitchRow(@"Shuffle styles",
         @"A fresh style rolled for every track; the pick above is what plays when this is off.",
         SGKeyLyricArtworkShuffle);
@@ -191,6 +199,8 @@ NSArray<SGModRow *> *SGLyricArtworkRows(void) {
         style,
         shuffle,
         chatTheme,
+        wordTiming,
+        finish,
         animated,
         quality,
         card,

@@ -1949,6 +1949,23 @@ static void drawHolo(SGWCtx *c) {
         drawText(c->line.translation, CGRectMake(bx, by, bw, cardH * 0.03),
                  serifFont(cardH * 0.015, UIFontWeightRegular, YES),
                  [UIColor colorWithWhite:0.30 alpha:1], NSTextAlignmentLeft);
+        by += cardH * 0.030;
+    }
+    // A second entry in the box, under a hairline: the next line, the
+    // way a card lists a second attack — it also keeps the box from
+    // standing mostly empty under one short lyric.
+    if (c->next.length) {
+        by += cardH * 0.016;
+        fillRect(CGRectMake(bx, by, bw, 1), [UIColor colorWithWhite:0 alpha:0.12]);
+        by += cardH * 0.014;
+        UIFont *nextFont = [UIFont boldSystemFontOfSize:cardH * 0.019];
+        CGFloat nextH = textHeight(c->next, nextFont, bw);
+        drawText(c->next, CGRectMake(bx, by, bw, nextH + 4), nextFont,
+                 [UIColor colorWithWhite:0.30 alpha:1], NSTextAlignmentLeft);
+        by += nextH + cardH * 0.008;
+        drawText(fmtClock(c->nextStart), CGRectMake(bx, by, bw, cardH * 0.02),
+                 monoFont(cardH * 0.0135, UIFontWeightRegular), [UIColor colorWithWhite:0.45 alpha:1],
+                 NSTextAlignmentLeft);
     }
 }
 

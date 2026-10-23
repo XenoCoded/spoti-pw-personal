@@ -24,7 +24,6 @@
 #import "Shared/Gestures/Gestures.h"
 #import "Shared/LiveActivity/LiveActivity.h"
 #import "Shared/Player/PlayerSettings.h"
-#import "Shared/Startup/Startup.h"
 #import "Shared/ListeningStats/ListeningStats.h"
 #import "App/About/About.h"
 #import "SettingsSearch.h"
@@ -120,9 +119,6 @@ static UIViewController *modSettingsPage(void) {
     if (recent.count) [sections addObject:SGSection(@"Recent", recent)];
     [sections addObjectsFromArray:@[
         SGAppearanceSection(),
-        // Opens to (Batch 55): one choice, on the root where a launch
-        // behaviour belongs — not inside a page it has nothing to do with.
-        SGSection(nil, @[SGStartupRow()]),
         SGSection(nil, parts),
         SGSection(nil, privacy),
         SGSection(nil, system),

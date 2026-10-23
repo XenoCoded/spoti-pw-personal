@@ -2,7 +2,7 @@
 // second; a nod and a shake are shapes in that stream, read against a
 // slow-moving baseline so the wearer's resting pose is never the
 // trigger. A nod is a pitch dip out and back inside a second or so; a
-// shake is the roll crossing to both sides in turn. Either fires once
+// shake is the yaw crossing to both sides in turn. Either fires once
 // and rests — a held pose or a dance floor cannot machine-gun the
 // player. Everything is read on the main thread; the motion queue only
 // measures.
@@ -14,7 +14,7 @@
 
 static CMHeadphoneMotionManager *sg_motion;
 static BOOL sg_running, sg_seeded, sg_denied;
-static double sg_basePitch, sg_baseRoll;
+static double sg_basePitch, sg_baseYaw;
 static BOOL sg_dipped;
 static CFTimeInterval sg_dipAt, sg_shakeAt, sg_cooldownUntil;
 static NSInteger sg_shakeSign, sg_shakeCrossings;
@@ -31,8 +31,20 @@ static void fire(NSString *key, SGGestureAction fallback) {
     SGGesturePerform((SGGestureAction)stored);
 }
 
-// One attitude sample, pitch and roll in radians against the baselines.
-static void sample(double pitch, double roll) {
+// One attitude sample, pitch and yaw in radians against the baselines.
+// The shake was read off the ROLL until Batch 95 — an ear-to-shoulder
+// tilt — and a head turned left and right barely moves it, so no
+// natural shake could ever cross its threshold. Turning the head is
+// yaw; that is what the shake reads now. Yaw wraps at ±π, so every
+// delta against the baseline takes the short way round.
+static double wrappedDelta(double angle, double base) {
+    double delta = angle - base;
+    while (delta > M_PI) delta -= M_PI * 2;
+    while (delta < -M_PI) delta += M_PI * 2;
+    return delta;
+}
+
+static void sample(double pitch, double yaw) {
     // Samples hop from the motion queue; ones already in flight when
     // stopMotion ran land here after the stop (Batch 93) and must not
     // complete a gesture nobody is listening for anymore.
@@ -40,16 +52,16 @@ static void sample(double pitch, double roll) {
     CFTimeInterval now = CFAbsoluteTimeGetCurrent();
     if (!sg_seeded) {
         sg_basePitch = pitch;
-        sg_baseRoll = roll;
+        sg_baseYaw = yaw;
         sg_seeded = YES;
         return;
     }
     // The baseline follows drift only; a gesture is over before it moves.
     sg_basePitch += (pitch - sg_basePitch) * 0.02;
-    sg_baseRoll += (roll - sg_baseRoll) * 0.02;
+    sg_baseYaw += wrappedDelta(yaw, sg_baseYaw) * 0.02;
     if (now < sg_cooldownUntil) return;
     double dip = fabs(pitch - sg_basePitch);
-    double tilt = roll - sg_baseRoll;
+    double tilt = wrappedDelta(yaw, sg_baseYaw);
     // The nod: out past the dip, then home again while it is still a nod.
     if (!sg_dipped && dip > 0.30) {
         sg_dipped = YES;
@@ -66,8 +78,10 @@ static void sample(double pitch, double roll) {
         sg_dipped = NO;   // a look down that stayed down is not a nod
     }
     // The shake: an extreme, then the other, then back — two crossings
-    // past the middle in quick succession.
-    NSInteger sign = tilt > 0.30 ? 1 : tilt < -0.30 ? -1 : 0;
+    // past the middle in quick succession. A natural turn reaches
+    // further than the roll ever did, and the bar sits a little lower
+    // (Batch 95): 0.25 rad, about fourteen degrees each way.
+    NSInteger sign = tilt > 0.25 ? 1 : tilt < -0.25 ? -1 : 0;
     if (sign && sign != sg_shakeSign) {
         if (now - sg_shakeAt > 1.4) sg_shakeCrossings = 0;
         sg_shakeSign = sign;
@@ -110,8 +124,8 @@ static void refresh(void) {
             });
             return;
         }
-        double pitch = motion.attitude.pitch, roll = motion.attitude.roll;
-        dispatch_async(dispatch_get_main_queue(), ^{ sample(pitch, roll); });
+        double pitch = motion.attitude.pitch, yaw = motion.attitude.yaw;
+        dispatch_async(dispatch_get_main_queue(), ^{ sample(pitch, yaw); });
     }];
     SGLog(@"head gestures: listening");
 }

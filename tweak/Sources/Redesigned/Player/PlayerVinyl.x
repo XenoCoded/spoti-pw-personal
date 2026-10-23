@@ -253,6 +253,42 @@ static void updateArm(UIView *tilt, BOOL playing, double fraction, BOOL animated
 
 #pragma mark - scrubbing the record
 
+// The disc and the arm live OUTSIDE the tilt view (Batch 95): the tilt
+// view is Spotify's own CoverArtTiltView, and as its subviews the
+// record and arm inherited its touch-driven 3D tilt — touching the
+// record tipped it on its side, elliptical, edge visible, and the
+// scrub geometry warped with it. As siblings laid over the tilt view
+// they keep only their own flat rotation. Centre and size come from
+// the tilt view: its centre, in its superview's space, does not move
+// under its own transform.
+static void placeOverlays(UIView *tilt) {
+    UIView *disc = discFor(tilt);
+    UIView *arm = armFor(tilt);
+    UIView *host = tilt.superview;
+    if (!host) {
+        // Nowhere to be a sibling yet: ride inside, as before.
+        if (disc && disc.superview != tilt) { [tilt addSubview:disc]; disc.frame = tilt.bounds; }
+        if (arm && arm.superview != tilt) { [tilt addSubview:arm]; arm.frame = tilt.bounds; }
+        return;
+    }
+    if (disc) {
+        if (disc.superview != host ||
+            [host.subviews indexOfObject:disc] != [host.subviews indexOfObject:tilt] + 1)
+            [host insertSubview:disc aboveSubview:tilt];
+        disc.bounds = CGRectMake(0, 0, tilt.bounds.size.width, tilt.bounds.size.width);
+        disc.center = tilt.center;
+        disc.layer.cornerRadius = tilt.bounds.size.width / 2;
+    }
+    if (arm) {
+        UIView *below = disc ?: tilt;
+        if (arm.superview != host ||
+            [host.subviews indexOfObject:arm] != [host.subviews indexOfObject:below] + 1)
+            [host insertSubview:arm aboveSubview:below];
+        arm.bounds = tilt.bounds;
+        arm.center = tilt.center;
+    }
+}
+
 // One scrub in flight: where the song was when the finger landed, how
 // far the finger has turned since, and where it last sought to.
 static void refreshTilts(void);
@@ -298,8 +334,11 @@ static CGFloat touchAngle(UIPanGestureRecognizer *pan, UIView *disc) {
         double target = self.start + self.accumulated * (kSecondsPerRevolution / (M_PI * 2));
         target = MIN(self.duration, MAX(0, target));
         // The song follows the finger, in steps coarse enough not to
-        // flood the player with seeks.
-        if (fabs(target - self.lastSought) >= 0.3) {
+        // flood the player with seeks: at 0.3 s steps a slow drag was a
+        // seek every fraction of a turn and the audio churned audibly
+        // (Batch 95) — a second at a time still tracks the finger, and
+        // the release below lands the exact spot.
+        if (fabs(target - self.lastSought) >= 1.0) {
             self.lastSought = target;
             id<SPTPlayer> player = SGKaraokePlayer();
             [player seekTo:target];
@@ -436,6 +475,8 @@ static void refreshTilts(void) {
             updateArm(tilt, !state.isPaused, fraction, YES);
             setSpinning(disc, !state.isPaused);
         }
+        // Out of the tilt view's subtree and over it (Batch 95).
+        placeOverlays(tilt);
     }
 }
 
@@ -458,13 +499,7 @@ static void refreshTilts(void) {
     if (!discFor(tilt) && !SGFlag(SGKeyVinyl, NO)) return;
     if (!vinylCoverIn(tilt) && !discFor(tilt)) return;
     [sg_vinylTilts addObject:tilt];
-    UIView *disc = discFor(tilt);
-    if (disc) {
-        disc.frame = tilt.bounds;
-        disc.layer.cornerRadius = tilt.bounds.size.width / 2;
-    }
-    UIView *arm = armFor(tilt);
-    if (arm) arm.frame = tilt.bounds;
+    if (discFor(tilt) || armFor(tilt)) placeOverlays(tilt);
     refreshTilts();
 }
 %end

@@ -4,6 +4,8 @@
 // animated artwork (Shared/LockScreenArtwork) yields the artwork slot while this is on.
 #import <Foundation/Foundation.h>
 
+@class MPMediaItemArtwork;
+
 #define SGKeyLyricArtwork @"spotifyglass.lyricArtwork"
 // The styles that move, as a looping clip instead of a still (Batch 8, iOS 26).
 #define SGKeyLyricArtworkAnimated @"spotifyglass.lyricArtwork.animated"

@@ -23,8 +23,8 @@ BOOL SGOpenSpotifyURI(NSURL *uri) {
     // arguments than it is called with is harmless.
     SEL current = @selector(navigateToURI:options:reason:completionHandler:resultHandler:);
     if ([dispatcher respondsToSelector:current]) {
-        ((void (*)(id, SEL, NSURL *, id, id, id, id))objc_msgSend)(
-            dispatcher, current, uri, nil, nil,
+        ((void (*)(id, SEL, NSURL *, long long, id, id, id))objc_msgSend)(
+            dispatcher, current, uri, 0, nil,
             (id)(^{ }), (id)(^(id result) { (void)result; }));
         return YES;
     }

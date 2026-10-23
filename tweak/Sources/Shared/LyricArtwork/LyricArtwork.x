@@ -1994,6 +1994,10 @@ UIImage *SGLyricArtworkCurrentCard(void) {
     return artwork ? [artwork imageWithSize:CGSizeMake(900, 1200)] : nil;
 }
 
+MPMediaItemArtwork *SGLyricArtworkCurrentStill(void) {
+    @synchronized (sg_lockObject()) { return sg_artwork; }
+}
+
 static void clearArtwork(void) {
     if (!sg_artwork && !sg_clipArtwork) return;
     sg_artwork = nil;

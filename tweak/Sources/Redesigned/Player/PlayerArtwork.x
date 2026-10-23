@@ -13,6 +13,7 @@
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Player.h"
+#import "PlayerVinyl.h"
 
 static const CGFloat kPausedScale = 0.84, kPausedScaleReduceMotion = 0.92;
 // The bar's 40pt cover lives in a tilt view of its own; the player's is 354.
@@ -33,8 +34,13 @@ static CGFloat currentScale(void) {
 // The child of the tilt view the size of the cover.
 static UIView *coverIn(UIView *tilt) {
     UIView *cover = [sg_covers objectForKey:tilt];
-    if (cover.superview == tilt) return cover;
+    if (cover.superview == tilt && cover != SGRVinylDiscIn(tilt)) return cover;
     for (UIView *sub in tilt.subviews) {
+        // Never the vinyl disc (Batch 94): it is also a full-size
+        // child of the tilt view, and if the cover is rebuilt after
+        // the disc was attached, the disc is the first match — and
+        // the cache below would keep the mistake.
+        if (sub == SGRVinylDiscIn(tilt)) continue;
         if (![sub isKindOfClass:SGRShadowPlate.class] && CGSizeEqualToSize(sub.bounds.size, tilt.bounds.size)) {
             [sg_covers setObject:sub forKey:tilt];
             return sub;

@@ -22,3 +22,12 @@ NSString *SGURIString(id uri);
 void SGAddPlayerStateObserver(id<SGPlayerStateObserver> observer);
 // The last state reported, nil before the player has reported one.
 SPTPlayerState *SGPlayerState(void);
+
+// Skip coordination between the mod's auto-skippers (Batch 94): the
+// trash bin and the blocked-artist skip judge a track through
+// different triggers on different clocks, and an uncoordinated pair
+// could each issue a skip for the same track — the second advance
+// landing on the innocent next track. A feature that issues a skip
+// notes it here; a feature about to skip checks first.
+void SGNoteModSkip(NSString *uri);
+BOOL SGModSkipRecent(NSString *uri);

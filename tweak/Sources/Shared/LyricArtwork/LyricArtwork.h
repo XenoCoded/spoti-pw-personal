@@ -59,6 +59,9 @@ NSArray<NSString *> *SGLyricArtworkStyleNames(void);
 // The card the lock screen is showing for the line being sung, drawn at
 // full size (Batch 35); nil before any line has been drawn.
 UIImage *SGLyricArtworkCurrentCard(void);
+// The still object itself, for identity checks by the other
+// now-playing hook (Batch 94).
+MPMediaItemArtwork *SGLyricArtworkCurrentStill(void);
 // One style drawn with sample facts — the picker's thumbnails (Batch 20).
 @class UIImage;
 UIImage *SGLyricArtworkSample(NSInteger style, CGSize size);

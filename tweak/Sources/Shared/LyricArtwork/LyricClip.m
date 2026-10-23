@@ -38,6 +38,17 @@ static dispatch_queue_t clipQueue(void) {
     return queue;
 }
 
+// Keys reserved at enqueue (Batch 94): the queue is serial and the
+// dedupe below used to happen only when a queued block STARTED, so
+// on fast lines the queue stacked stale renders — each pinning its
+// frame closure and decoded covers — faster than it drained.
+static NSMutableSet<NSString *> *queued(void) {
+    static NSMutableSet<NSString *> *set;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ set = [NSMutableSet set]; });
+    return set;
+}
+
 static NSMutableSet<NSString *> *rendering(void) {
     static NSMutableSet<NSString *> *set;
     static dispatch_once_t once;
@@ -151,8 +162,17 @@ static NSMutableSet<NSString *> *priorityKeys(void) {
 
 void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duration, BOOL priority,
                        UIImage *(^frameAt)(double t), void (^completion)(NSURL *file)) {
+    @synchronized (rendering()) {
+        if ([rendering() containsObject:key] || [queued() containsObject:key]) {
+            if (!waiters()[key]) waiters()[key] = [NSMutableArray array];
+            [waiters()[key] addObject:completion];
+            return;
+        }
+        [queued() addObject:key];
+    }
     dispatch_async(clipQueue(), ^{
         @synchronized (rendering()) {
+            [queued() removeObject:key];
             if ([rendering() containsObject:key]) {
                 if (!waiters()[key]) waiters()[key] = [NSMutableArray array];
                 [waiters()[key] addObject:completion];

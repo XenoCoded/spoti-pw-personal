@@ -31,6 +31,8 @@ static id sg_artwork;
 static NSString *sg_key;
 
 static NSString *sg_wanted;
+static NSString *sg_failedURI;   // the last track the walk found nothing for (Batch 94)
+static NSDate *sg_failedAt;
 static NSString *sg_playing;   // the source the artwork set for sg_wanted came from
 static NSString *sg_offered;
 static CGFloat sg_aspect;
@@ -176,6 +178,13 @@ static void ask(NSString *source, NSString *uri, SPTPlayerTrack *track, SGCanvas
 
 static void walk(NSString *uri, SPTPlayerTrack *track, SGCanvas *fromMetadata, NSArray<NSString *> *order, NSUInteger at) {
     if (at >= order.count) {
+        // A failed walk backs off per track (Batch 94): with no
+        // stamp, every player-state publish for the track (each
+        // pause, resume, seek) re-ran the whole chain — another
+        // canvaz POST, another download — for as long as the
+        // network stayed dead.
+        sg_failedURI = [uri copy];
+        sg_failedAt = [NSDate date];
         SGLog(@"lock artwork: no clip for %@ from %@", uri, order.count ? [order componentsJoinedByString:@", "] : @"no source");
         return;
     }
@@ -234,6 +243,8 @@ static void resolve(SPTPlayerTrack *track) {
     // A Canvas landing late is no news with Spotify off, or with a source asked before it already playing.
     NSUInteger spotifyAt = [order indexOfObject:SGArtworkSourceSpotify];
     if (same && (spotifyAt == NSNotFound || (sg_playing && [order indexOfObject:sg_playing] < spotifyAt))) return;
+    if (same && [uri isEqualToString:sg_failedURI] && sg_failedAt
+        && -sg_failedAt.timeIntervalSinceNow < 300) return;
     sg_wanted = uri;
     sg_playing = nil;
     SGArtworkCancelFetch();
@@ -269,7 +280,15 @@ static SGArtworkWatcher *sg_watcher;
     id artwork;
     NSString *key;
     @synchronized (sg_lockObject()) {
-        if (info[MPMediaItemPropertyArtwork]) sg_cover = info[MPMediaItemPropertyArtwork];
+        // Only a real cover is recorded (Batch 94): whichever of
+        // the two now-playing hooks runs first, the info can already
+        // carry the lyric still or this file's own animated artwork,
+        // and either used to be filed as "the cover" — the Canvas
+        // preview then showed the lyric card as the album art. The
+        // lyric hook has always guarded its side this way.
+        id theirs = info[MPMediaItemPropertyArtwork];
+        if (theirs && theirs != sg_artwork && theirs != SGLyricArtworkCurrentStill())
+            sg_cover = theirs;
         sg_info = info;
         sg_infoAt = CFAbsoluteTimeGetCurrent();
         artwork = sg_artwork;

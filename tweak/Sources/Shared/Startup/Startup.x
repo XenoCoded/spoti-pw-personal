@@ -28,9 +28,18 @@
 @property (nonatomic, copy) NSString *recorded;
 @end
 
+// Held from load until the jump fires (Batch 94): the first player
+// state of a launch is Spotify restoring the previous session's
+// playback, and the first dispatcher traffic is its launch routing —
+// both used to be recorded OVER the stored last place before the
+// jump (which deliberately waits for them) read it, so "Last place"
+// reliably opened the resumed context instead of the browsed place.
+static BOOL sg_recordingHeld = YES;
+
 @implementation SGStartupRecorder
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
+    if (sg_recordingHeld) return;
     NSString *context = SGURIString(state.contextURI);
     // A search that happened to be playing is not a place worth reopening;
     // with no context at all, the track itself is the place.
@@ -53,13 +62,14 @@ static void sg_tryJump(void) {
     if (sg_jumped) return;
     sg_attempts++;
     NSString *target = SGStartupTargetURI();
-    if (!target.length) { sg_jumped = YES; return; }
+    if (!target.length) { sg_jumped = YES; sg_recordingHeld = NO; return; }
     if (SGLinkDispatcher()) {
         sg_jumped = YES;
         // The dispatcher is up, which is to say the main UI has loaded;
         // one beat more for Spotify's own launch routing to land first.
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.25 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
+            sg_recordingHeld = NO;
             BOOL opened = SGOpenSpotifyURI([NSURL URLWithString:target]);
             SGLog(@"startup: opened %@ (%@)", target, opened ? @"accepted" : @"refused");
             if (!sg_recordNav) return;
@@ -76,6 +86,7 @@ static void sg_tryJump(void) {
     }
     if (sg_attempts > 20) {   // a quarter of a minute with no dispatcher: try blind, once
         sg_jumped = YES;
+        sg_recordingHeld = NO;
         SGOpenSpotifyURI([NSURL URLWithString:target]);
         SGLog(@"startup: the dispatcher never came up, opened %@ blind", target);
         return;
@@ -89,7 +100,7 @@ static void sg_tryJump(void) {
 // plumbing are not places, and a URI carrying a query is a moment, not a
 // page.
 static void recordNavigation(NSURL *uri) {
-    if (!sg_recordNav || !uri) return;
+    if (!sg_recordNav || sg_recordingHeld || !uri) return;
     NSString *text = uri.absoluteString;
     if (![text hasPrefix:@"spotify:"] || [text hasPrefix:@"spotify:search"] ||
         [text hasPrefix:@"spotify:internal"] || [text containsString:@"?"]) return;
@@ -101,7 +112,7 @@ static void recordNavigation(NSURL *uri) {
 %hook SPTLinkDispatcherImplementation
 // 9.1.90's shape; the interactionID form below is 9.1.78's, kept for
 // older builds — on 9.1.90 it simply never fires (Batch 93).
-- (void)navigateToURI:(NSURL *)uri options:(id)options reason:(id)reason
+- (void)navigateToURI:(NSURL *)uri options:(long long)options reason:(id)reason
     completionHandler:(id)completionHandler resultHandler:(id)resultHandler {
     %orig;
     recordNavigation(uri);

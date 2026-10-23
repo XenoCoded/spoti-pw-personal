@@ -8,6 +8,17 @@
 // came, so a reset is stock Spotify, for every switch there is and every one added later.
 #define SGKeyStock @"spotifyglass.stock"
 
+// Scalar reads of values whose class is not guaranteed — a stored
+// default (a restored backup can plant any plist type at any key) or
+// a field out of remote/file JSON. Messaging -boolValue et al at an
+// NSArray/NSDictionary/NSNull raises; these gate on the class first
+// (Batch 94). NSNumber passes through, NSString reads as it always
+// has, anything else is nil / the fallback.
+NSNumber *SGCoerceNumber(id value);
+NSInteger SGCoerceInteger(id value, NSInteger fallback);
+double SGCoerceDouble(id value, double fallback);
+BOOL SGCoerceBool(id value, BOOL fallback);
+
 BOOL SGFlag(NSString *key, BOOL fallback);
 BOOL SGEnabled(NSString *key);   // an unset switch is on
 BOOL SGHidden(NSString *key);    // an unset switch is off

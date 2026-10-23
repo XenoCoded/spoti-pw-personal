@@ -7,6 +7,7 @@ import os
 @objc(SGLiveActivityBridge)
 public final class SGLiveActivityBridge: NSObject {
     private static let log = Logger(subsystem: "spotifyglass", category: "live activity")
+    private static var deniedLogged = false
 
     private static var current: Activity<SGLyricsAttributes>? {
         Activity<SGLyricsAttributes>.activities.first { $0.activityState == .active || $0.activityState == .stale }
@@ -120,7 +121,15 @@ public final class SGLiveActivityBridge: NSObject {
             return
         }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            log.notice("[spotifyglass] live activity: activities are off for this app")
+            // Logged once per process (Batch 94): this runs on every
+            // send — every lyric line — and the notice buried the log.
+            // The guard itself still runs every time, so enabling
+            // Live Activities in iOS Settings takes hold on the next
+            // send with no restart.
+            if !Self.deniedLogged {
+                Self.deniedLogged = true
+                log.notice("[spotifyglass] live activity: activities are off for this app")
+            }
             return
         }
         do {

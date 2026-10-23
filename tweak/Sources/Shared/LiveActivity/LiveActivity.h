@@ -28,6 +28,9 @@
 #define SGKeyLiveActivityView @"spotifyglass.liveActivity.view"
 // What happens while nothing plays, SGLiveActivityIdleEnd's values.
 #define SGKeyLiveActivityIdleEnd @"spotifyglass.liveActivity.idleEnd"
+// The idle clock's start, persisted (Batch 94) so a relaunch over a
+// still-paused player resumes the clock instead of restarting it.
+#define SGKeyLiveActivityIdleStamp @"spotifyglass.liveActivity.idleStamp"
 // Whether the lyrics view sends the next line with the current one
 // (Batch 59): 0 current + next, 1 current only.
 #define SGKeyLiveActivityLines @"spotifyglass.liveActivity.lines"

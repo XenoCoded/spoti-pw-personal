@@ -91,7 +91,7 @@ SGLyricsAsk SGLyricsCacheAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResu
         done(nil);
         return;
     }
-    BOOL wordTimed = [sheet[@"wordTimed"] boolValue];
+    BOOL wordTimed = SGCoerceBool(sheet[@"wordTimed"], NO);
     NSMutableArray<SGKaraokeLine *> *lines = [NSMutableArray array];
     // The file is not trusted (Batch 90): it outlives the build that
     // wrote it, across every sideload, and the readers downstream join
@@ -101,8 +101,8 @@ SGLyricsAsk SGLyricsCacheAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResu
     for (NSDictionary *entry in sheet[@"lines"]) {
         if (![entry isKindOfClass:NSDictionary.class]) continue;
         SGKaraokeLine *line = [SGKaraokeLine new];
-        line.start = [entry[@"start"] integerValue];
-        line.end = [entry[@"end"] integerValue];
+        line.start = SGCoerceInteger(entry[@"start"], 0);
+        line.end = SGCoerceInteger(entry[@"end"], 0);
         id translation = entry[@"translation"];
         line.translation = [translation isKindOfClass:NSString.class] ? translation : nil;
         id voice = entry[@"voice"];
@@ -116,9 +116,9 @@ SGLyricsAsk SGLyricsCacheAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResu
                 SGKaraokeWord *word = [SGKaraokeWord new];
                 id text = wordEntry[@"text"];
                 word.text = [text isKindOfClass:NSString.class] ? text : @"";
-                word.start = [wordEntry[@"start"] integerValue];
-                word.end = [wordEntry[@"end"] integerValue];
-                word.joined = [wordEntry[@"joined"] boolValue];
+                word.start = SGCoerceInteger(wordEntry[@"start"], 0);
+                word.end = SGCoerceInteger(wordEntry[@"end"], 0);
+                word.joined = SGCoerceBool(wordEntry[@"joined"], NO);
                 [words addObject:word];
             }
         }

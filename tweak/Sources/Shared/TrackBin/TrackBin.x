@@ -24,7 +24,11 @@
     if (!uri.length || [uri isEqualToString:_seenURI]) return;
     _seenURI = [uri copy];
     if (!SGTrackBinned(uri)) return;
+    // Another auto-skipper may have just dealt with this track
+    // (Batch 94): a second skip would land on the next track.
+    if (SGModSkipRecent(uri)) return;
     SGLog(@"trash bin: skipping %@", uri);
+    SGNoteModSkip(uri);
     SGGesturePerform(SGGestureNextTrack);
 }
 

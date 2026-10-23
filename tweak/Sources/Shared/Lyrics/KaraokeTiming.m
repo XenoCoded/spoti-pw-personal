@@ -1,3 +1,4 @@
+#import "Core/SGCore.h"
 #import "Lyrics.h"
 #import "Shared/Lyrics/Protobuf.h"
 
@@ -233,10 +234,10 @@ static NSArray<SGKaraokeLine *> *fromJSON(NSData *body) {
     if (!synced && ![lyrics[@"syncType"] isEqual:@"UNSYNCED"]) return nil;
     NSMutableArray<NSNumber *> *starts = [NSMutableArray array];
     NSMutableArray<NSString *> *texts = [NSMutableArray array];
-    for (NSDictionary *line in lyrics[@"lines"]) {
+    for (NSDictionary *line in [lyrics[@"lines"] isKindOfClass:NSArray.class] ? lyrics[@"lines"] : @[]) {
         if (![line isKindOfClass:NSDictionary.class]) continue;
         id words = line[@"words"];
-        [starts addObject:@([line[@"startTimeMs"] integerValue])];
+        [starts addObject:@(SGCoerceInteger(line[@"startTimeMs"], 0))];
         [texts addObject:[words isKindOfClass:NSString.class] ? words : @""];
     }
     return synced ? SGKaraokeEstimatedLines(starts, texts) : SGKaraokeStaticLines(texts);

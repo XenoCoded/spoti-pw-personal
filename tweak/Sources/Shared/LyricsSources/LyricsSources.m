@@ -319,7 +319,14 @@ static void finish(SGLyricsWalk *walk) {
             SGLyricsCacheSave(trackID, lyrics);
         }
         if (!lyrics) {
-            @synchronized (sg_missing) { [sg_missing addObject:trackID]; }
+            @synchronized (sg_missing) {
+                // Capped (Batch 94): the one unbounded collection
+                // among its siblings — a long session of instrumental
+                // and local tracks grew it forever. Clearing whole
+                // costs one re-ask per cleared track, nothing more.
+                if (sg_missing.count > 2000) [sg_missing removeAllObjects];
+                [sg_missing addObject:trackID];
+            }
         }
     }
     SGLog(@"lyrics: %@ ends with %@", trackID, lyrics
@@ -473,10 +480,10 @@ NSString *const SGLyricsOwnRequestKey = @"spotifyglass.ownRequest";
 // for the color-lyrics reply, which with a source of the mod's on comes after the chain has answered;
 // so the wait is set to the most the flag allows.
 id SGLyricsForcedFlag(NSString *key) {
-    static BOOL on;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ on = SGLyricsEnabled(); });
-    if (!on) return nil;
+    // Read live (Batch 94): the once-ever latch meant turning the
+    // mod's sources on mid-session never forced the timeout flag
+    // until a restart.
+    if (!SGLyricsEnabled()) return nil;
     if ([key isEqualToString:@"ios-nowplaying-scroll-impl.scroll_cards_async_loading_timeout_ms"]) return @5000;
     return nil;
 }

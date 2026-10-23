@@ -38,7 +38,7 @@ void SGWidgetDataWrite(void) {
         // (Batch 93): the suite is cleared once, so the widgets go
         // blank instead of presenting a song from days ago as current.
         if ([suite stringForKey:@"sg.title"]) {
-            for (NSString *key in @[@"sg.title", @"sg.artist", @"sg.line", @"sg.day",
+            for (NSString *key in @[@"sg.title", @"sg.artist", @"sg.line", @"sg.day", @"sg.updatedAt",
                                     @"sg.playsToday", @"sg.minutesToday", @"sg.streak", @"sg.topTitle"])
                 [suite removeObjectForKey:key];
             NSURL *container = [NSFileManager.defaultManager
@@ -131,7 +131,14 @@ void SGWidgetDataWrite(void) {
         // A cover that was not ready at the track-change instant still
         // lands when it arrives (Batch 93): the slot was empty or held
         // nothing, and no later write ever filled it for that song.
-        if (coverFile && image && ![NSFileManager.defaultManager fileExistsAtPath:coverFile.path]) {
+        static NSString *sg_coverFillFor;
+        NSString *fillKey = [title stringByAppendingFormat:@"\n%@", artist];
+        if (coverFile && image && ![fillKey isEqualToString:sg_coverFillFor]
+            && ![NSFileManager.defaultManager fileExistsAtPath:coverFile.path]) {
+            // Once per song (Batch 94): a cover that cannot land
+            // (encode or write failing) used to be re-encoded on
+            // every write for the whole track.
+            sg_coverFillFor = [fillKey copy];
             NSData *jpeg = UIImageJPEGRepresentation(image, 0.75);
             if (jpeg && [jpeg writeToURL:coverFile atomically:YES]) [SGWidgetReload reloadNowPlaying];
         }

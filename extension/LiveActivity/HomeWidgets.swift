@@ -64,7 +64,7 @@ struct SGWidgetProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<SGWidgetEntry>) -> Void) {
         // The tweak asks for a reload when the track changes; the half
         // hour policy is only the backstop for a long, unchanging listen.
-        let next = Calendar.current.date(byAdding: .minute, value: 30, to: Date())!
+        let next = Calendar.current.date(byAdding: .minute, value: 30, to: Date()) ?? Date().addingTimeInterval(30 * 60)
         completion(Timeline(entries: [sgEntry()], policy: .after(next)))
     }
 }

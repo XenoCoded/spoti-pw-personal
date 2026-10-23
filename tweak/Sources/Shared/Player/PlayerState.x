@@ -15,6 +15,20 @@ static NSString *sg_stateKey;
 // Set once the now playing platform has reported; the mod's own observer on the player stands down.
 static BOOL sg_platformReported = NO;
 
+static NSString *sg_lastSkipURI;
+static NSDate *sg_lastSkipAt;
+
+void SGNoteModSkip(NSString *uri) {
+    if (!uri.length) return;
+    sg_lastSkipURI = [uri copy];
+    sg_lastSkipAt = [NSDate date];
+}
+
+BOOL SGModSkipRecent(NSString *uri) {
+    return uri.length && [uri isEqualToString:sg_lastSkipURI]
+        && sg_lastSkipAt && -sg_lastSkipAt.timeIntervalSinceNow < 5;
+}
+
 void SGAddPlayerStateObserver(id<SGPlayerStateObserver> observer) {
     if (!observer) return;
     // Created once (Batch 90): the bare check-then-create was safe only

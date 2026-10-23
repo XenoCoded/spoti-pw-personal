@@ -4,6 +4,12 @@
 // a real turntable stops. Off until switched on; the native look is
 // untouched.
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
+
+// The vinyl disc attached under this tilt view, if any (Batch 94):
+// PlayerArtwork's cover lookup asks, so it can never mistake the
+// record for the cover and cache the mistake.
+UIView *SGRVinylDiscIn(UIView *tilt);
 
 @class SGModRow;
 NSArray<SGModRow *> *SGRVinylRows(void);

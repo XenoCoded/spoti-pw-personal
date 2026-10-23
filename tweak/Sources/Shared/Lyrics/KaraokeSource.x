@@ -33,7 +33,11 @@ static __weak id sg_player;
 static NSMutableDictionary<NSString *, SPTPlayerTrack *> *sg_seenTracks;
 static __weak SPTPlayerTrack *sg_lastSeen;
 static NSString *sg_lastSeenID;   // the player makes a new track object on every state it reports, so the id is what tells a change
-static BOOL sg_ownSources;   // a source of the mod's answers the color-lyrics request, not Spotify
+// Read live at every use (Batch 94): this was a %ctor latch, so
+// flipping the mod's lyrics sources mid-session left the engine
+// asking the disabled chain (or never asking the enabled one) until
+// a restart, while the request hook followed the switch at once.
+static BOOL sg_ownSources(void) { return SGLyricsEnabled(); }
 static char kBodyKey;
 
 static NSString *trackInURL(NSURL *url) {
@@ -96,7 +100,7 @@ void SGKaraokeKeepLines(NSString *track, NSArray<SGKaraokeLine *> *lines) {
 
 static void received(NSURLSession *session, NSURLSessionTask *task, NSData *data) {
     rememberHeaders(session, task.currentRequest);
-    if (sg_ownSources || !trackInURL(task.currentRequest.URL)) return;
+    if (sg_ownSources() || !trackInURL(task.currentRequest.URL)) return;
     NSMutableData *body = objc_getAssociatedObject(task, &kBodyKey);
     if (!body) objc_setAssociatedObject(task, &kBodyKey, (body = [NSMutableData data]), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [body appendData:data];
@@ -106,7 +110,7 @@ static void completed(NSURLSessionTask *task, NSError *error) {
     NSMutableData *body = objc_getAssociatedObject(task, &kBodyKey);
     if (!body) {
         NSString *path = task.currentRequest.URL.path;
-        if (!sg_ownSources && [path.lowercaseString containsString:@"lyrics"]) SGLog(@"karaoke: lyrics request not read: %@ (error %@)", path, error);
+        if (!sg_ownSources() && [path.lowercaseString containsString:@"lyrics"]) SGLog(@"karaoke: lyrics request not read: %@ (error %@)", path, error);
         return;
     }
     objc_setAssociatedObject(task, &kBodyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -186,7 +190,7 @@ void SGKaraokeAskSpotifyForTiming(NSString *trackID) {
 
 void SGKaraokeRequestLyrics(NSString *trackID) {
     if (!trackID || sg_lyrics[trackID] || [sg_requested containsObject:trackID]) return;
-    if (!sg_ownSources) {
+    if (!sg_ownSources()) {
         requestFromSpotify(trackID);
         return;
     }
@@ -273,7 +277,7 @@ void SGKaraokeRememberTrack(SPTPlayerTrack *track) {
 // beat of starting it and gives its card list about a second to load, so an answer that is already
 // in is what puts the card there. The track is named here, so no walk waits for a name.
 static void prefetch(SPTPlayerTrack *track, NSString *trackID, SPTPlayerState *state) {
-    if (!sg_ownSources) return;
+    if (!sg_ownSources()) return;
     SGLyricsPrefetch(trackID);
     SPTPlayerTrack *next = upNextIn(state);
     NSString *nextID = idOf(next);
@@ -338,7 +342,25 @@ static void prefetch(SPTPlayerTrack *track, NSString *trackID, SPTPlayerState *s
     sg_requested = [NSMutableSet set];
     sg_asking = [NSMutableSet set];
     sg_losses = [NSMutableDictionary dictionary];
-    sg_ownSources = SGLyricsEnabled();
+    // A sources change drops the cached lines (Batch 94): the lines
+    // a track already played with came from the old configuration,
+    // and every surface kept showing them until a restart. The
+    // fingerprint is the enabled sources in order; any defaults
+    // write that leaves it unchanged costs one string compare.
+    static NSString *sg_sourcesPrint;
+    sg_sourcesPrint = [[SGLyricsOrder() componentsJoinedByString:@","] copy];
+    [NSNotificationCenter.defaultCenter
+        addObserverForName:NSUserDefaultsDidChangeNotification object:nil
+                     queue:NSOperationQueue.mainQueue
+                usingBlock:^(NSNotification *note) {
+        NSString *now = [SGLyricsOrder() componentsJoinedByString:@","];
+        if ([now isEqualToString:sg_sourcesPrint]) return;
+        sg_sourcesPrint = [now copy];
+        [sg_lyrics removeAllObjects];
+        [sg_requested removeAllObjects];
+        [sg_losses removeAllObjects];
+        SGLog(@"karaoke: sources changed (%@), cached lines dropped", now);
+    }];
     %init;
     SGLog(@"karaoke: on");
     SGRequireClasses(@[

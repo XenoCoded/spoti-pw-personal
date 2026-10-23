@@ -133,9 +133,17 @@ static void refresh(void) {
 // bare temporary deallocates as the constructor returns — toggling the
 // big screen after launch neither started nor stopped the server.
 static SGTVLyricsWatcher *sg_watcher;
+static id sg_defaultsObserver;
 
 %ctor {
     sg_watcher = [SGTVLyricsWatcher new];
     SGAddPlayerStateObserver(sg_watcher);
+    // The switch also re-reads the moment it changes (Batch 94),
+    // like the head gestures: state changes alone could leave the
+    // server running (or stopped) through a long pause.
+    sg_defaultsObserver = [NSNotificationCenter.defaultCenter
+        addObserverForName:NSUserDefaultsDidChangeNotification object:nil
+                     queue:NSOperationQueue.mainQueue
+                usingBlock:^(NSNotification *note) { refresh(); }];
     refresh();
 }

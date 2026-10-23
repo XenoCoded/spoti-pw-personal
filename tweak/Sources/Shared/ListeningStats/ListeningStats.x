@@ -76,6 +76,19 @@
 }
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
+    // The master switch is read live (Batch 94): it used to be
+    // launch-gated both ways — the watcher only existed when the
+    // flag was on at %ctor, so on mid-session counted nothing and
+    // off mid-session kept counting until a restart. Off drops the
+    // in-flight stretch uncounted; on resumes with the next state.
+    if (!SGFlag(SGKeyListeningStats, NO)) {
+        [self dropPending];
+        self.countedURI = nil;
+        self.uri = nil;
+        self.playing = NO;
+        self.since = nil;
+        return;
+    }
     [self flush];
     NSString *uri = SGURIString(state.track.URI);
     BOOL playing = uri != nil && !state.isPaused;
@@ -110,11 +123,10 @@
 static SGStatsWatcher *sg_watcher;
 
 %ctor {
-    if (!SGFlag(SGKeyListeningStats, NO)) return;
     sg_watcher = [SGStatsWatcher new];
     SGAddPlayerStateObserver(sg_watcher);
     [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillTerminateNotification
                                                     object:nil queue:NSOperationQueue.mainQueue
                                                 usingBlock:^(NSNotification *note) { [sg_watcher flush]; }];
-    SGLog(@"listening stats: on");
+    SGLog(@"listening stats: watching (the switch is read live)");
 }

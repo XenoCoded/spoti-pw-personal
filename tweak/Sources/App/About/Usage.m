@@ -26,7 +26,7 @@ static NSString *const kAsked = @"spotipw.asked";
 // carries the row, so sending anything is a choice the user made.
 static BOOL usageOn(void) {
     id stored = [NSUserDefaults.standardUserDefaults objectForKey:SGKeyUsage];
-    return stored ? [stored boolValue] : NO;
+    return stored ? SGCoerceBool(stored, NO) : NO;
 }
 
 // Asked on every return to the front, so the formatter is made once.

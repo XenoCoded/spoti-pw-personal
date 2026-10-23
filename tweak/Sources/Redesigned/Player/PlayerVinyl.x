@@ -64,6 +64,10 @@ static UIView *discFor(UIView *tilt) {
     return objc_getAssociatedObject(tilt, &kDiscKey);
 }
 
+UIView *SGRVinylDiscIn(UIView *tilt) {
+    return discFor(tilt);
+}
+
 static void setSpinning(UIView *disc, BOOL spinning) {
     // Reduce Motion (Batch 93): every other continuous animation in
     // the mod honours it; the record simply stands still.

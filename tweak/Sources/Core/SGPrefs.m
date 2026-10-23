@@ -1,9 +1,33 @@
 #import "SGPrefs.h"
 
+NSNumber *SGCoerceNumber(id value) {
+    if ([value isKindOfClass:NSNumber.class]) return value;
+    if ([value isKindOfClass:NSString.class]) return @([value doubleValue]);
+    return nil;
+}
+
+NSInteger SGCoerceInteger(id value, NSInteger fallback) {
+    NSNumber *number = SGCoerceNumber(value);
+    return number ? number.integerValue : fallback;
+}
+
+double SGCoerceDouble(id value, double fallback) {
+    NSNumber *number = SGCoerceNumber(value);
+    return number ? number.doubleValue : fallback;
+}
+
+BOOL SGCoerceBool(id value, BOOL fallback) {
+    NSNumber *number = SGCoerceNumber(value);
+    return number ? number.boolValue : fallback;
+}
+
 BOOL SGFlag(NSString *key, BOOL fallback) {
     NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
     id value = [store objectForKey:key];
-    if (value) return [value boolValue];
+    // The stored class is not guaranteed (Backup import plants values
+    // at keys this phone never wrote, Batch 94): a non-number there
+    // used to raise inside -boolValue, in %ctor paths — a launch loop.
+    if (value) return SGCoerceBool(value, fallback);
     return fallback && ![store boolForKey:SGKeyStock];
 }
 
@@ -21,7 +45,7 @@ void SGSetEnabled(NSString *key, BOOL on) {
 
 NSInteger SGInt(NSString *key, NSInteger fallback) {
     id value = [NSUserDefaults.standardUserDefaults objectForKey:key];
-    return value ? [value integerValue] : fallback;
+    return value ? SGCoerceInteger(value, fallback) : fallback;
 }
 
 void SGSetInt(NSString *key, NSInteger value) {

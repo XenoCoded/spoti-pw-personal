@@ -7,6 +7,7 @@
 #import <MediaPlayer/MediaPlayer.h>
 #import "Core/SGCore.h"
 #import "ArtistBlock.h"
+#import "Shared/Player/PlayerState.h"
 #import "Headers/SPTPlayer.h"
 #import "Headers/SPTNowPlayingPlaybackController.h"
 
@@ -51,6 +52,13 @@ static NSDictionary *blockedArtistOf(SPTPlayerTrack *track) {
 }
 
 static void skip(SPTPlayerTrack *track, NSDictionary *artist) {
+    // The trash bin may have just skipped this same track through
+    // its own watcher (Batch 94): the skip below advances the
+    // CURRENT track, so issuing it now would skip the next one too.
+    if (SGModSkipRecent(trackKey(track))) {
+        SGLog(@"artist block: %@ already skipped by another watcher", track.trackTitle);
+        return;
+    }
     SPTNowPlayingPlaybackControllerImplementation *controller = sg_controller;
     id player = sg_player;
     if (controller.canSkipNext) {
@@ -61,6 +69,7 @@ static void skip(SPTPlayerTrack *track, NSDictionary *artist) {
         SGLog(@"artist block: %@ by %@ cannot be skipped", track.trackTitle, artist[SGArtistName]);
         return;
     }
+    SGNoteModSkip(trackKey(track));
     SGLog(@"artist block: skipped %@ by %@", track.trackTitle, artist[SGArtistName]);
 }
 

@@ -65,12 +65,14 @@ static NSArray<SGKaraokeLine *> *linesFromLRC(NSString *lrc) {
 // first, then the closest length, with the slack above as the gate when a length is
 // known. A live or karaoke namesake is a last resort the title test keeps out on its own.
 static NSDictionary *bestOf(id found, SGLyricsQuery *query) {
-    NSArray *list = [found isKindOfClass:NSDictionary.class] ? found[@"data"][@"song"][@"list"] : nil;
+    id qqData = [found isKindOfClass:NSDictionary.class] ? found[@"data"] : nil;
+    id qqSongs = [qqData isKindOfClass:NSDictionary.class] ? qqData[@"song"] : nil;
+    NSArray *list = [qqSongs isKindOfClass:NSDictionary.class] ? qqSongs[@"list"] : nil;
     NSDictionary *best = nil;
     NSInteger bestScore = NSIntegerMax;
     for (NSDictionary *item in [list isKindOfClass:NSArray.class] ? list : @[]) {
         if (![item isKindOfClass:NSDictionary.class] || ![item[@"songmid"] isKindOfClass:NSString.class]) continue;
-        NSInteger off = query.seconds > 0 ? labs((NSInteger)[item[@"interval"] doubleValue] - query.seconds) : 0;
+        NSInteger off = query.seconds > 0 ? labs((NSInteger)SGCoerceDouble(item[@"interval"], 0) - query.seconds) : 0;
         if (query.seconds > 0 && off > kLengthSlack) continue;
         BOOL titled = [item[@"songname"] isKindOfClass:NSString.class]
             && [item[@"songname"] caseInsensitiveCompare:query.title] == NSOrderedSame;

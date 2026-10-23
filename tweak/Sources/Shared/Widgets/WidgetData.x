@@ -19,10 +19,24 @@
 // were left to the slow timer alone — stale by up to twenty seconds, or
 // for good while paused.
 static SGWidgetWatcher *sg_watcher;
+static id sg_defaultsObserver;
+static BOOL sg_widgetsWas;
 
 %ctor {
     sg_watcher = [SGWidgetWatcher new];
     SGAddPlayerStateObserver(sg_watcher);
+    // The off-clear fires with the toggle itself (Batch 94): Batch
+    // 93's clear waited inside the next write, and a force-quit in
+    // between (pause, toggle off, swipe away) left the last song in
+    // the suite until the next launch's write.
+    sg_widgetsWas = SGFlag(SGKeyWidgets, YES);
+    sg_defaultsObserver = [NSNotificationCenter.defaultCenter
+        addObserverForName:NSUserDefaultsDidChangeNotification object:nil
+                     queue:NSOperationQueue.mainQueue
+                usingBlock:^(NSNotification *note) {
+        BOOL now = SGFlag(SGKeyWidgets, YES);
+        if (now != sg_widgetsWas) { sg_widgetsWas = now; SGWidgetDataWrite(); }
+    }];
     // One write as the app settles (Batch 91): a widget added while a
     // song was already playing otherwise waited for the next track
     // change or the playing-only timer to say anything at all.

@@ -8,6 +8,7 @@
 #import "Core/SGCore.h"
 #import "Headers/SPTPlayer.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/Player/PlayerState.h"
 #import "Shared/ArtworkPalette/ArtworkPalette.h"
 #import "LiveActivity.h"
 
@@ -203,10 +204,26 @@ static void tick(void) API_AVAILABLE(ios(17.0)) {
     // activity is ended instead of sitting on the lock screen until the system
     // expires it. Playing again clears both the clock and the latch.
     if (!track.trackTitle.length || state.isPaused) {
-        if (!sg_idleSince) sg_idleSince = [NSDate date];
+        if (!sg_idleSince) {
+            // A relaunch over the same paused track resumes the
+            // clock where the dead process left it (Batch 94): the
+            // stamp is written when a clock starts and cleared when
+            // it does, so a paused card no longer earns a whole fresh
+            // idle limit from every kill and relaunch.
+            NSString *uri = SGURIString(track.URI) ?: @"";
+            NSDictionary *stamp = [NSUserDefaults.standardUserDefaults
+                dictionaryForKey:SGKeyLiveActivityIdleStamp];
+            NSDate *stored = [stamp[@"uri"] isEqualToString:uri]
+                && [stamp[@"at"] isKindOfClass:NSDate.class] ? stamp[@"at"] : nil;
+            sg_idleSince = stored ?: [NSDate date];
+            if (!stored) [NSUserDefaults.standardUserDefaults
+                setObject:@{@"at": sg_idleSince, @"uri": uri}
+                   forKey:SGKeyLiveActivityIdleStamp];
+        }
     } else {
         sg_idleSince = nil;
         sg_idleEnded = NO;
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeyLiveActivityIdleStamp];
     }
     // The stale reap (Batch 53): the activity the system has already given up
     // on, over a player that is paused or trackless, is ended on the spot —
@@ -392,6 +409,7 @@ void SGSetLiveActivityEnabled(BOOL on) {
         sg_lastStart = nil;
         sg_idleSince = nil;
         sg_idleEnded = NO;
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeyLiveActivityIdleStamp];
         clearSleepTimer();
         if (!on) {
             [SGLiveActivityBridge end];

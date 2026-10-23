@@ -130,9 +130,18 @@ static void refresh(void) {
 // putting AirPods in never started motion and turning the switch off
 // never stopped it.
 static SGHeadGestureWatcher *sg_watcher;
+static id sg_defaultsObserver;
 
 %ctor {
     sg_watcher = [SGHeadGestureWatcher new];
     SGAddPlayerStateObserver(sg_watcher);
+    // The switch also re-reads the moment it changes (Batch 94):
+    // state changes alone left a paused session's motion running
+    // after the switch went off, and one more shake fired its action
+    // on a stopped player. refresh() is a no-op in the right state.
+    sg_defaultsObserver = [NSNotificationCenter.defaultCenter
+        addObserverForName:NSUserDefaultsDidChangeNotification object:nil
+                     queue:NSOperationQueue.mainQueue
+                usingBlock:^(NSNotification *note) { refresh(); }];
     refresh();
 }

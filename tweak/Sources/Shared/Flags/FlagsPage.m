@@ -99,8 +99,11 @@ static NSString *flagState(const SGFlagDef *flag, id value) {
     NSUInteger dot = [key rangeOfString:@"."].location;
     id value = _overrides[key];
 
-    SGFillCell(cell, [key substringFromIndex:dot + 1],
-             [NSString stringWithFormat:@"%@ · %@", [key substringToIndex:dot], flagState(flag, value)],
+    // A key with no dot (Batch 94): NSNotFound + 1 wraps, and the
+    // substrings below raised. The table is the mod's own, so this
+    // is belt-and-braces for a future dot-less flag entry.
+    SGFillCell(cell, dot == NSNotFound ? key : [key substringFromIndex:dot + 1],
+             [NSString stringWithFormat:@"%@ · %@", dot == NSNotFound ? @"" : [key substringToIndex:dot], flagState(flag, value)],
              value ? SGGreen() : nil, nil);
     cell.backgroundColor = UIColor.clearColor;
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;

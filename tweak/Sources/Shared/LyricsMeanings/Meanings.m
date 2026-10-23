@@ -152,7 +152,7 @@ static NSNumber *songIn(NSDictionary *response, NSString *title, NSString *artis
 // editors' annotations under it too.
 static SGLyricsMeaningAuthor authorOf(NSDictionary *annotation) {
     NSString *state = stringIn(annotation[@"state"]);
-    if ([annotation[@"verified"] boolValue] || [state isEqualToString:@"verified"]) return SGLyricsMeaningByArtist;
+    if (SGCoerceBool(annotation[@"verified"], NO) || [state isEqualToString:@"verified"]) return SGLyricsMeaningByArtist;
     if ([state isEqualToString:@"accepted"]) return SGLyricsMeaningByEditors;
     return SGLyricsMeaningByCommunity;
 }
@@ -160,12 +160,12 @@ static SGLyricsMeaningAuthor authorOf(NSDictionary *annotation) {
 static void addMeanings(NSDictionary *response, NSMutableArray<SGLyricsMeaning *> *into) {
     id referents = response[@"referents"];
     for (NSDictionary *referent in [referents isKindOfClass:NSArray.class] ? referents : @[]) {
-        if (![referent isKindOfClass:NSDictionary.class] || [referent[@"is_description"] boolValue]) continue;
+        if (![referent isKindOfClass:NSDictionary.class] || SGCoerceBool(referent[@"is_description"], NO)) continue;
         NSString *fragment = stringIn(referent[@"fragment"]);
         id annotations = referent[@"annotations"];
         if (!fragment.length || ![annotations isKindOfClass:NSArray.class]) continue;
         for (NSDictionary *annotation in annotations) {
-            if (![annotation isKindOfClass:NSDictionary.class] || [annotation[@"deleted"] boolValue]) continue;
+            if (![annotation isKindOfClass:NSDictionary.class] || SGCoerceBool(annotation[@"deleted"], NO)) continue;
             if ([stringIn(annotation[@"state"]) isEqualToString:@"rejected"]) continue;
             id body = annotation[@"body"];
             NSString *text = [stringIn([body isKindOfClass:NSDictionary.class] ? body[@"plain"] : nil)
@@ -181,13 +181,18 @@ static void addMeanings(NSDictionary *response, NSMutableArray<SGLyricsMeaning *
     }
 }
 
-static void fetchReferents(NSNumber *song, NSUInteger page, NSMutableArray<SGLyricsMeaning *> *into, void (^done)(void)) {
+static void fetchReferents(NSNumber *song, NSUInteger page, NSMutableArray<SGLyricsMeaning *> *into, void (^done)(BOOL complete)) {
     getJSON(kReferents, @{@"song_id": song.stringValue, @"text_format": @"plain",
                           @"per_page": @(kPerPage).stringValue, @"page": @(page).stringValue}, ^(NSDictionary *response) {
+        // A failed page (network, a 500) is not the end of the list
+        // (Batch 94): it used to read as one, and the caller cached
+        // the truncated answer as final — one flaky response cost a
+        // track its meanings until the app restarted.
+        if (!response) { done(NO); return; }
         addMeanings(response, into);
         id next = response[@"next_page"];
         if ([next isKindOfClass:NSNumber.class] && page < kMostPages) fetchReferents(song, page + 1, into, done);
-        else done();
+        else done(YES);
     });
 }
 
@@ -196,9 +201,23 @@ static void fetchReferents(NSNumber *song, NSUInteger page, NSMutableArray<SGLyr
 // Main queue only: every meaning Genius has for a track, empty for none.
 static NSMutableDictionary<NSString *, NSArray<SGLyricsMeaning *> *> *sg_meanings;
 static NSMutableDictionary<NSString *, NSMutableArray *> *sg_waiting;
+static NSMutableArray<NSString *> *sg_meaningsOrder;
+
+// The cache is process-lifetime, so it is capped (Batch 94): an
+// annotation-heavy track can carry hundreds of KB of referents, and
+// a long session used to keep one entry per track forever.
+static const NSUInteger kMostCachedMeanings = 64;
 
 static void answer(NSString *trackID, NSArray<SGLyricsMeaning *> *meanings, BOOL keep) {
-    if (keep) sg_meanings[trackID] = meanings;
+    if (keep) {
+        if (!sg_meanings[trackID]) [sg_meaningsOrder addObject:trackID];
+        sg_meanings[trackID] = meanings;
+        while (sg_meaningsOrder.count > kMostCachedMeanings) {
+            NSString *oldest = sg_meaningsOrder.firstObject;
+            [sg_meaningsOrder removeObjectAtIndex:0];
+            [sg_meanings removeObjectForKey:oldest];
+        }
+    }
     NSArray *waiting = sg_waiting[trackID];
     [sg_waiting removeObjectForKey:trackID];
     for (void (^each)(NSArray<SGLyricsMeaning *> *) in waiting) each(meanings);
@@ -208,6 +227,7 @@ static void meaningsOf(NSString *trackID, void (^done)(NSArray<SGLyricsMeaning *
     if (!sg_meanings) {
         sg_meanings = [NSMutableDictionary dictionary];
         sg_waiting = [NSMutableDictionary dictionary];
+        sg_meaningsOrder = [NSMutableArray array];
     }
     NSArray<SGLyricsMeaning *> *known = sg_meanings[trackID];
     if (known) {
@@ -236,9 +256,10 @@ static void meaningsOf(NSString *trackID, void (^done)(NSArray<SGLyricsMeaning *
             return;
         }
         NSMutableArray<SGLyricsMeaning *> *meanings = [NSMutableArray array];
-        fetchReferents(song, 1, meanings, ^{
-            SGLog(@"meanings: Genius song %@ for %@ has %lu annotations", song, title, (unsigned long)meanings.count);
-            answer(trackID, meanings, YES);
+        fetchReferents(song, 1, meanings, ^(BOOL complete) {
+            SGLog(@"meanings: Genius song %@ for %@ has %lu annotations%@", song, title, (unsigned long)meanings.count,
+                  complete ? @"" : @" (incomplete — not kept)");
+            answer(trackID, meanings, complete);
         });
     });
 }

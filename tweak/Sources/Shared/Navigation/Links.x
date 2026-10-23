@@ -12,29 +12,23 @@ id SGLinkDispatcher(void) {
 }
 
 BOOL SGOpenSpotifyURI(NSURL *uri) {
-    SPTLinkDispatcherImplementation *dispatcher = sg_linkDispatcher;
-    if (!uri || !dispatcher) return NO;
-    // 9.1.90's dispatcher takes a reason and two handlers where 9.1.78
-    // took an interaction id (Batch 93: the old selector is absent from
-    // the 9.1.90 executable, so every open through it silently failed —
-    // Opens to, the drawer's jumps, Open Artist, the stats rows). Real
-    // empty blocks ride along rather than nil: a Swift closure bridged
-    // as non-optional would trap on nil, and a block that takes fewer
-    // arguments than it is called with is harmless.
-    SEL current = @selector(navigateToURI:options:reason:completionHandler:resultHandler:);
-    if ([dispatcher respondsToSelector:current]) {
-        ((void (*)(id, SEL, NSURL *, long long, id, id, id))objc_msgSend)(
-            dispatcher, current, uri, 0, nil,
-            (id)(^{ }), (id)(^(id result) { (void)result; }));
-        return YES;
-    }
-    SEL legacy = @selector(navigateToURI:options:interactionID:);
-    if ([dispatcher respondsToSelector:legacy]) {
-        ((void (*)(id, SEL, NSURL *, long long, id))objc_msgSend)(
-            dispatcher, legacy, uri, 0, nil);
-        return YES;
-    }
-    return NO;
+    if (!uri) return NO;
+    // The direct dispatcher call is GONE (Batch 96), and good riddance:
+    // nine crash logs from a real phone (2026-10-22, 21:30–21:34) end
+    // identically — EXC_BAD_ACCESS inside swift_getEnumCaseMultiPayload,
+    // reached from this function through the Batch 93 msgSend. However
+    // the 9.1.90 type encoding reads, the Swift side consumes one of
+    // the arguments as something it is not, and every call killed the
+    // app: Opens to's launch jump was merely the caller that fired on
+    // its own. The URI now goes back to the app through the ordinary
+    // openURL door, where Spotify's own delegate builds its dispatcher
+    // call itself, with arguments right by construction. A URI that
+    // does not route that way fails quietly instead of crashing.
+    if (![uri.scheme isEqualToString:@"spotify"]) return NO;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [UIApplication.sharedApplication openURL:uri options:@{} completionHandler:nil];
+    });
+    return YES;
 }
 
 #pragma mark - asking before opening

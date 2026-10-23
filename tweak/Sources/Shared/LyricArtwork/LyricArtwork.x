@@ -1653,9 +1653,18 @@ static UIImage *drawWorkshopArtwork(NSInteger style, CGSize size, NSString *prev
     format.opaque = YES;
     return [[[UIGraphicsImageRenderer alloc] initWithSize:size format:format]
         imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        // The two colours are the only values in the context with no
+        // other owner, and its fields are __unsafe_unretained: an
+        // autoreleased colour stored straight into the struct is fair
+        // game for the optimiser to release before a draw reads it.
+        // The style picker's sample renders died exactly there (crash
+        // log 2026-10-22 21:38:58: objc_msgSend to a freed object,
+        // inside a draw, on the samples queue). Strong locals hold
+        // both colours for the whole draw (Batch 96).
+        UIColor *average = averageColor(cover);
+        UIColor *accent = average ? lifted(average) : nil;
         SGWCtx c = {size, prev, current, next, title, artist, cover, line, index, count,
-                    prevStart, nextStart, duration, averageColor(cover), nil};
-        c.accent = c.average ? lifted(c.average) : nil;
+                    prevStart, nextStart, duration, average, accent};
         switch (style) {
             case SGLyricArtworkTwitter: drawTwitter(&c); break;
             case SGLyricArtworkCoverInLetters: drawCoverInLetters(&c); break;

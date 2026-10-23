@@ -317,67 +317,218 @@ static UIImage *drawRecordArtwork(CGSize size, NSString *prev, NSString *current
     }];
 }
 
-// One chat bubble; returns the y under it. Outgoing sits right, in the accent;
-// incoming left, in grey.
-static CGFloat drawBubble(NSString *text, CGFloat y, CGSize size, BOOL outgoing,
-                          UIColor *fill, UIColor *textColor, UIFont *font) {
-    if (!text.length) return y;
-    CGFloat maxText = size.width * 0.68;
-    CGRect measured = [text boundingRectWithSize:CGSizeMake(maxText, CGFLOAT_MAX)
-                                         options:NSStringDrawingUsesLineFragmentOrigin
-                                      attributes:@{NSFontAttributeName: font} context:nil];
-    CGFloat padX = size.width * 0.038, padY = size.height * 0.012;
-    CGFloat width = ceil(measured.size.width) + 2 * padX, height = ceil(measured.size.height) + 2 * padY;
-    CGFloat x = outgoing ? size.width * 0.94 - width : size.width * 0.06;
+// An iMessage bubble as one path: the rounded body and the little tail
+// that curls out of its bottom corner on the side it answers to. The
+// tail is most of what makes a bubble read as iMessage rather than a
+// rounded rectangle (Batch 97: the old Chat was dark pills in the
+// cover's colour — green by default, which reads as SMS, the opposite
+// of the thing it is named after).
+static UIBezierPath *bubblePath(CGRect rect, BOOL outgoing, CGFloat radius) {
+    UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:rect cornerRadius:radius];
+    CGFloat tailW = rect.size.width * 0.05 + 6;
+    CGFloat baseY = rect.origin.y + rect.size.height;
+    UIBezierPath *tail = [UIBezierPath bezierPath];
+    if (outgoing) {
+        CGFloat right = rect.origin.x + rect.size.width;
+        [tail moveToPoint:CGPointMake(right - radius * 0.9, baseY - 1)];
+        [tail addQuadCurveToPoint:CGPointMake(right + tailW * 0.55, baseY + tailW * 0.30)
+                     controlPoint:CGPointMake(right + tailW * 0.52, baseY - 1)];
+        [tail addQuadCurveToPoint:CGPointMake(right - radius * 0.15, baseY - radius * 0.55)
+                     controlPoint:CGPointMake(right + tailW * 0.08, baseY + tailW * 0.10)];
+    } else {
+        CGFloat left = rect.origin.x;
+        [tail moveToPoint:CGPointMake(left + radius * 0.9, baseY - 1)];
+        [tail addQuadCurveToPoint:CGPointMake(left - tailW * 0.55, baseY + tailW * 0.30)
+                     controlPoint:CGPointMake(left - tailW * 0.52, baseY - 1)];
+        [tail addQuadCurveToPoint:CGPointMake(left + radius * 0.15, baseY - radius * 0.55)
+                     controlPoint:CGPointMake(left - tailW * 0.08, baseY + tailW * 0.10)];
+    }
+    [tail closePath];
+    [path appendPath:tail];
+    return path;
+}
+
+// One bubble of the conversation; returns the y under it. Incoming sits
+// left in iMessage's grey with near-black words; outgoing right, in the
+// blue gradient, white words — the attributed text carries the karaoke
+// sweep for the line being sung.
+static CGFloat drawBubble(NSAttributedString *text, NSString *plain, CGFloat y, CGSize size,
+                          BOOL outgoing, UIFont *font) {
+    if (!plain.length) return y;
+    CGFloat maxText = size.width * 0.66;
+    CGRect measured = [plain boundingRectWithSize:CGSizeMake(maxText, CGFLOAT_MAX)
+                                          options:NSStringDrawingUsesLineFragmentOrigin
+                                       attributes:@{NSFontAttributeName: font} context:nil];
+    CGFloat padX = size.width * 0.034, padY = size.height * 0.011;
+    CGFloat width = ceil(measured.size.width) + 2 * padX;
+    CGFloat height = ceil(measured.size.height) + 2 * padY;
+    CGFloat x = outgoing ? size.width * 0.965 - width : size.width * 0.035;
     CGRect bubble = CGRectMake(x, y, width, height);
-    [fill setFill];
-    [[UIBezierPath bezierPathWithRoundedRect:bubble cornerRadius:height * 0.36] fill];
-    [text drawInRect:CGRectMake(x + padX, y + padY, measured.size.width, measured.size.height)
-      withAttributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: textColor}];
+    CGFloat radius = MIN(height * 0.5, size.width * 0.048);
+    UIBezierPath *path = bubblePath(bubble, outgoing, radius);
+    if (outgoing) {
+        CGContextRef ctx = UIGraphicsGetCurrentContext();
+        CGContextSaveGState(ctx);
+        [path addClip];
+        CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        NSArray *colors = @[(id)[UIColor colorWithRed:0.10 green:0.60 blue:1.0 alpha:1].CGColor,
+                            (id)[UIColor colorWithRed:0.0 green:0.48 blue:1.0 alpha:1].CGColor];
+        CGGradientRef gradient = CGGradientCreateWithColors(space, (__bridge CFArrayRef)colors, NULL);
+        CGContextDrawLinearGradient(ctx, gradient, CGPointMake(0, bubble.origin.y),
+                                    CGPointMake(0, bubble.origin.y + bubble.size.height), 0);
+        CGGradientRelease(gradient);
+        CGColorSpaceRelease(space);
+        CGContextRestoreGState(ctx);
+    } else {
+        [[UIColor colorWithRed:0.898 green:0.898 blue:0.918 alpha:1] setFill];
+        [path fill];
+    }
+    [text drawWithRect:CGRectMake(x + padX, y + padY, measured.size.width, measured.size.height)
+               options:NSStringDrawingUsesLineFragmentOrigin context:nil];
     return y + height;
 }
 
-// The Chat: the lines as a conversation — what was sung on the left in grey, the
-// line being sung on the right in the cover's colour, what is next waiting on
-// the left, and the song named at the top the way a chat names its person.
+// One short string centred in a rect, both ways.
+static void drawCenteredAt(NSString *text, CGRect rect, UIFont *font, UIColor *color) {
+    NSDictionary *attrs = @{NSFontAttributeName: font, NSForegroundColorAttributeName: color};
+    CGSize measured = [text sizeWithAttributes:attrs];
+    [text drawInRect:CGRectMake(rect.origin.x + (rect.size.width - measured.width) / 2,
+                                rect.origin.y + (rect.size.height - measured.height) / 2,
+                                measured.width, measured.height)
+      withAttributes:attrs];
+}
+
+// The contact's face at the top of the conversation: the cover, round.
+static void drawAvatar(UIImage *cover, CGFloat centerX, CGFloat top, CGFloat d, CGSize size) {
+    CGRect rect = CGRectMake(centerX - d / 2, top, d, d);
+    if (!cover) {
+        [[UIColor colorWithRed:0.78 green:0.78 blue:0.80 alpha:1] setFill];
+        [[UIBezierPath bezierPathWithOvalInRect:rect] fill];
+        drawCenteredAt(@"♪", rect, [UIFont systemFontOfSize:d * 0.52 weight:UIFontWeightSemibold],
+                       UIColor.whiteColor);
+        return;
+    }
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGContextSaveGState(ctx);
+    [[UIBezierPath bezierPathWithOvalInRect:rect] addClip];
+    CGContextTranslateCTM(ctx, rect.origin.x, rect.origin.y);
+    drawCoverFilled(cover, rect.size);
+    CGContextRestoreGState(ctx);
+}
+
+// The bar the message was typed into, pinned to the floor of the card:
+// a camera at the left, the pill field with its placeholder, and the
+// blue send arrow. It does no work; it just makes the room a room.
+static void drawComposeBar(CGSize size) {
+    CGFloat W = size.width, H = size.height;
+    CGFloat barH = H * 0.078;
+    CGFloat top = H - barH;
+    [[UIColor colorWithRed:0.80 green:0.80 blue:0.82 alpha:1] setFill];
+    UIRectFill(CGRectMake(0, top, W, MAX(1, H * 0.0014)));
+    [UIColor.whiteColor setFill];
+    UIRectFill(CGRectMake(0, top, W, barH));
+    CGFloat midY = top + barH / 2;
+    CGFloat camH = H * 0.024, camW = camH * 1.3;
+    CGRect cam = CGRectMake(W * 0.045, midY - camH / 2, camW, camH);
+    [[UIColor colorWithWhite:0.60 alpha:1] setFill];
+    [[UIBezierPath bezierPathWithRoundedRect:cam cornerRadius:camH * 0.30] fill];
+    [UIColor.whiteColor setFill];
+    [[UIBezierPath bezierPathWithOvalInRect:CGRectInset(cam, camW * 0.36, camH * 0.24)] fill];
+    CGFloat fieldX = CGRectGetMaxX(cam) + W * 0.028;
+    CGFloat fieldH = H * 0.044;
+    CGRect field = CGRectMake(fieldX, midY - fieldH / 2, W * 0.955 - fieldX, fieldH);
+    UIBezierPath *pill = [UIBezierPath bezierPathWithRoundedRect:field cornerRadius:fieldH / 2];
+    [[UIColor colorWithRed:0.78 green:0.78 blue:0.80 alpha:1] setStroke];
+    pill.lineWidth = MAX(1, H * 0.0016);
+    [pill stroke];
+    [@"iMessage" drawInRect:CGRectMake(field.origin.x + W * 0.030, midY - H * 0.0125,
+                                       field.size.width * 0.55, H * 0.025)
+            withAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:H * 0.019],
+                             NSForegroundColorAttributeName:
+                                 [UIColor colorWithRed:0.70 green:0.70 blue:0.72 alpha:1]}];
+    CGFloat sd = fieldH * 0.80;
+    CGRect disc = CGRectMake(CGRectGetMaxX(field) - sd - H * 0.004, midY - sd / 2, sd, sd);
+    [[UIColor colorWithRed:0.0 green:0.48 blue:1.0 alpha:1] setFill];
+    [[UIBezierPath bezierPathWithOvalInRect:disc] fill];
+    drawCenteredAt(@"↑", disc, [UIFont systemFontOfSize:sd * 0.58 weight:UIFontWeightBold],
+                   UIColor.whiteColor);
+}
+
+// The Chat, rebuilt as the room it is named after (Batch 97): iMessage
+// in daylight — white room, the song as the contact (its cover for a
+// face, its name under it), the timestamp divider, what was sung
+// arriving from the left in grey, the line being sung sent from the
+// right in the blue gradient with the karaoke sweep inside it,
+// "Delivered" under it, what's next waiting on the left, and the
+// compose bar along the floor.
 static UIImage *drawChatArtwork(CGSize size, NSString *prev, NSString *current, NSString *next,
-                                UIImage *cover, NSString *title, NSString *artist) {
+                                UIImage *cover, SGKaraokeLine *line, NSString *title, NSString *artist) {
     UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
     format.scale = 1;
     format.opaque = YES;
     return [[[UIGraphicsImageRenderer alloc] initWithSize:size format:format]
         imageWithActions:^(UIGraphicsImageRendererContext *context) {
-        [UIColor.blackColor setFill];
-        UIRectFill(CGRectMake(0, 0, size.width, size.height));
-        UIColor *average = averageColor(cover);
-        UIColor *accent = average ? lifted(average) : [UIColor colorWithRed:0.11 green:0.85 blue:0.38 alpha:1];
-        CGFloat floor = size.height * 0.97;
-        CGFloat y = size.height * 0.055;
-        y = drawCentered(title.length ? title : @"♪", y, floor, size,
-                         [UIFont systemFontOfSize:size.height * 0.027 weight:UIFontWeightSemibold],
-                         [UIColor colorWithWhite:1 alpha:0.92]);
+        CGFloat W = size.width, H = size.height;
+        [UIColor.whiteColor setFill];
+        UIRectFill(CGRectMake(0, 0, W, H));
+        UIColor *ink = [UIColor colorWithRed:0.11 green:0.11 blue:0.12 alpha:1];
+        UIColor *grey = [UIColor colorWithRed:0.56 green:0.56 blue:0.58 alpha:1];
+        CGFloat y = H * 0.030;
+        [@"‹" drawInRect:CGRectMake(W * 0.030, y - H * 0.006, W * 0.10, H * 0.05)
+          withAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:H * 0.052
+                                                                 weight:UIFontWeightLight],
+                           NSForegroundColorAttributeName:
+                               [UIColor colorWithRed:0.0 green:0.48 blue:1.0 alpha:1]}];
+        CGFloat d = W * 0.115;
+        drawAvatar(cover, W / 2, y, d, size);
+        y += d + H * 0.007;
+        y = drawCentered(title.length ? title : @"♪", y, H, size,
+                         [UIFont systemFontOfSize:H * 0.0215 weight:UIFontWeightSemibold], ink);
         if (artist.length) {
-            y = drawCentered(artist, y, floor, size,
-                             [UIFont systemFontOfSize:size.height * 0.020],
-                             [UIColor colorWithWhite:1 alpha:0.45]);
+            y = drawCentered([artist stringByAppendingString:@" ›"], y, H, size,
+                             [UIFont systemFontOfSize:H * 0.0165], grey);
         }
-        y += size.height * 0.012;
-        [[UIColor colorWithWhite:1 alpha:0.14] setFill];
-        UIRectFill(CGRectMake(size.width * 0.06, y, size.width * 0.88, 1));
-        y += size.height * 0.05;
-        UIFont *pastFont = [UIFont systemFontOfSize:size.height * 0.031];
-        UIFont *nowFont = [UIFont systemFontOfSize:size.height * 0.036 weight:UIFontWeightMedium];
-        y = drawBubble(prev, y, size, NO, [UIColor colorWithWhite:1 alpha:0.13],
-                       [UIColor colorWithWhite:1 alpha:0.65], pastFont);
-        if (prev.length) y += size.height * 0.016;
+        y += H * 0.014;
+        [[UIColor colorWithRed:0.90 green:0.90 blue:0.92 alpha:1] setFill];
+        UIRectFill(CGRectMake(0, y, W, MAX(1, H * 0.0014)));
+        y += H * 0.020;
+        y = drawCentered(@"iMessage", y, H, size,
+                         [UIFont systemFontOfSize:H * 0.0145 weight:UIFontWeightSemibold], grey);
+        NSString *stamp = [@"Today " stringByAppendingString:
+            [NSDateFormatter localizedStringFromDate:NSDate.date
+                                           dateStyle:NSDateFormatterNoStyle
+                                           timeStyle:NSDateFormatterShortStyle]];
+        y = drawCentered(stamp, y, H, size, [UIFont systemFontOfSize:H * 0.0145], grey);
+        y += H * 0.022;
+        UIFont *font = [UIFont systemFontOfSize:H * 0.030];
+        NSAttributedString *pastAttr = [[NSAttributedString alloc]
+            initWithString:prev ?: @"" attributes:@{NSFontAttributeName: font,
+                                                    NSForegroundColorAttributeName: ink}];
+        NSAttributedString *nextAttr = [[NSAttributedString alloc]
+            initWithString:next ?: @"" attributes:@{NSFontAttributeName: font,
+                                                    NSForegroundColorAttributeName: ink}];
+        y = drawBubble(pastAttr, prev, y, size, NO, font);
+        if (prev.length) y += H * 0.014;
         if (sg_frameTime >= 0) {
             double k = MIN(1, sg_frameTime / 0.35);
-            y += (1 - (1 - pow(1 - k, 3))) * size.height * 0.03;
+            y += (1 - (1 - pow(1 - k, 3))) * H * 0.03;
         }
-        y = drawBubble(current, y, size, YES, accent, UIColor.whiteColor, nowFont);
-        y += size.height * 0.016;
-        drawBubble(next, y, size, NO, [UIColor colorWithWhite:1 alpha:0.09],
-                   [UIColor colorWithWhite:1 alpha:0.5], pastFont);
+        NSAttributedString *nowAttr = [current isEqualToString:@"♪"]
+            ? [[NSAttributedString alloc] initWithString:current
+                attributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: UIColor.whiteColor}]
+            : sungLine(line, current, font, UIColor.whiteColor,
+                       [UIColor colorWithWhite:1 alpha:0.55]);
+        y = drawBubble(nowAttr, current, y, size, YES, font);
+        y += H * 0.005;
+        NSString *delivered = @"Delivered";
+        UIFont *deliveredFont = [UIFont systemFontOfSize:H * 0.0135];
+        CGSize dSize = [delivered sizeWithAttributes:@{NSFontAttributeName: deliveredFont}];
+        [delivered drawInRect:CGRectMake(W * 0.965 - dSize.width, y, dSize.width, dSize.height)
+               withAttributes:@{NSFontAttributeName: deliveredFont,
+                                NSForegroundColorAttributeName: grey}];
+        y += dSize.height + H * 0.014;
+        if (y < H * 0.86) drawBubble(nextAttr, next, y, size, NO, font);
+        drawComposeBar(size);
     }];
 }
 
@@ -534,73 +685,195 @@ static void drawStackedWords(NSArray<NSString *> *words, CGFloat fontSize, CGFlo
     }
 }
 
-// Twitter: the song as a post. The artist posts, the last line was an earlier
-// post, the line being sung is the big one, and the counts are the song's own
-// numbers dressed up — no service was consulted for them.
+// A small round avatar of the cover at (x, y), d wide.
+static void drawRoundAvatar(SGWCtx *c, CGFloat x, CGFloat y, CGFloat d) {
+    if (!c->cover) {
+        [[UIColor colorWithWhite:1 alpha:0.15] setFill];
+        [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(x, y, d, d)] fill];
+        return;
+    }
+    CGContextSaveGState(UIGraphicsGetCurrentContext());
+    [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(x, y, d, d)] addClip];
+    drawCoverInRect(c->cover, CGRectMake(x, y, d, d));
+    CGContextRestoreGState(UIGraphicsGetCurrentContext());
+}
+
+// The verified tick: a small blue disc with a check, after a name.
+static void drawVerifiedTick(CGFloat x, CGFloat y, CGFloat d) {
+    CGRect tick = CGRectMake(x, y, d, d);
+    [[UIColor colorWithRed:0.11 green:0.61 blue:0.94 alpha:1] setFill];
+    [[UIBezierPath bezierPathWithOvalInRect:tick] fill];
+    drawText(@"✓", CGRectInset(tick, 1, -1), [UIFont boldSystemFontOfSize:d * 0.72],
+             UIColor.whiteColor, NSTextAlignmentCenter);
+}
+
+// Twitter, rebuilt as a thread (Batch 97): the previous line is its own
+// smaller post above, joined to this one by the thread line real threads
+// draw between avatars; the line being sung is the main post; views get
+// their own row with the number bold; and the action row is four evenly
+// spaced stroke icons with grey counts — no emoji at mismatched sizes,
+// and the composition runs to a reply pill at the foot instead of dying
+// at half height over a black void.
 static void drawTwitter(SGWCtx *c) {
     CGSize size = c->size;
     fillRect(CGRectMake(0, 0, size.width, size.height), UIColor.blackColor);
     CGFloat margin = size.width * 0.07, width = size.width - 2 * margin;
+    UIColor *grey = [UIColor colorWithWhite:1 alpha:0.45];
     drawText(@"Post", CGRectMake(0, size.height * 0.045, size.width, size.height * 0.03),
              [UIFont boldSystemFontOfSize:size.height * 0.024], UIColor.whiteColor, NSTextAlignmentCenter);
-    CGFloat y = size.height * 0.105;
-    // The poster's avatar is the cover, round.
-    CGFloat avatar = size.width * 0.105;
-    if (c->cover) {
-        CGContextSaveGState(UIGraphicsGetCurrentContext());
-        [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(margin, y, avatar, avatar)] addClip];
-        drawCoverInRect(c->cover, CGRectMake(margin, y, avatar, avatar));
-        CGContextRestoreGState(UIGraphicsGetCurrentContext());
+    // The "···" affordance, top right: three small filled circles.
+    CGFloat dotD = size.height * 0.006, dotY = size.height * 0.056;
+    [[UIColor colorWithWhite:1 alpha:0.55] setFill];
+    for (int i = 0; i < 3; i++) {
+        CGFloat dx = size.width * 0.90 + i * size.height * 0.016;
+        [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(dx, dotY, dotD, dotD)] fill];
     }
-    CGFloat textX = margin + avatar + size.width * 0.03;
-    drawText(c->artist, CGRectMake(textX, y, width - avatar, size.height * 0.03),
-             [UIFont boldSystemFontOfSize:size.height * 0.023], UIColor.whiteColor, NSTextAlignmentLeft);
-    // The verified tick: a small blue disc with a check.
-    CGFloat nameWidth = [c->artist sizeWithAttributes:@{NSFontAttributeName: [UIFont boldSystemFontOfSize:size.height * 0.023]}].width;
-    CGRect tick = CGRectMake(textX + nameWidth + 6, y + size.height * 0.004, size.height * 0.02, size.height * 0.02);
-    [[UIColor colorWithRed:0.11 green:0.61 blue:0.94 alpha:1] setFill];
-    [[UIBezierPath bezierPathWithOvalInRect:tick] fill];
-    drawText(@"✓", CGRectInset(tick, 1, -1), [UIFont boldSystemFontOfSize:size.height * 0.014],
-             UIColor.whiteColor, NSTextAlignmentCenter);
     NSString *handle = [[c->artist.lowercaseString componentsSeparatedByCharactersInSet:
         [[NSCharacterSet alphanumericCharacterSet] invertedSet]] componentsJoinedByString:@""];
-    drawText([NSString stringWithFormat:@"@%@ · 2h", handle.length ? handle : @"artist"],
-             CGRectMake(textX, y + size.height * 0.028, width - avatar, size.height * 0.025),
-             [UIFont systemFontOfSize:size.height * 0.019], [UIColor colorWithWhite:1 alpha:0.45], NSTextAlignmentLeft);
-    y += avatar + size.height * 0.02;
+    if (!handle.length) handle = @"artist";
+    CGFloat y = size.height * 0.115;
+    // The earlier post in the thread: smaller, one size down in every way.
     if (c->prev.length) {
-        drawText(c->prev, CGRectMake(margin, y, width, size.height * 0.09),
-                 [UIFont systemFontOfSize:size.height * 0.021], [UIColor colorWithWhite:1 alpha:0.45], NSTextAlignmentLeft);
-        y += textHeight(c->prev, [UIFont systemFontOfSize:size.height * 0.021], width) + size.height * 0.025;
+        CGFloat small = size.width * 0.072;
+        drawRoundAvatar(c, margin, y, small);
+        CGFloat tx = margin + small + size.width * 0.025;
+        UIFont *miniName = [UIFont boldSystemFontOfSize:size.height * 0.019];
+        drawText(c->artist, CGRectMake(tx, y - size.height * 0.002, width - small, size.height * 0.026),
+                 miniName, UIColor.whiteColor, NSTextAlignmentLeft);
+        CGFloat nameW = [c->artist sizeWithAttributes:@{NSFontAttributeName: miniName}].width;
+        drawVerifiedTick(tx + nameW + 5, y + size.height * 0.002, size.height * 0.016);
+        drawText([NSString stringWithFormat:@"@%@ · 2h", handle],
+                 CGRectMake(tx + nameW + size.height * 0.026, y - size.height * 0.002, width, size.height * 0.026),
+                 [UIFont systemFontOfSize:size.height * 0.018], grey, NSTextAlignmentLeft);
+        UIFont *miniFont = [UIFont systemFontOfSize:size.height * 0.021];
+        CGFloat miniH = textHeight(c->prev, miniFont, width - small - size.width * 0.025);
+        drawText(c->prev, CGRectMake(tx, y + size.height * 0.026, width - small - size.width * 0.025, miniH + 4),
+                 miniFont, [UIColor colorWithWhite:1 alpha:0.88], NSTextAlignmentLeft);
+        CGFloat miniBottom = y + size.height * 0.026 + miniH + size.height * 0.016;
+        // The thread line, avatar centre to avatar centre.
+        fillRect(CGRectMake(margin + small / 2 - 1, y + small + 3, 2, miniBottom - y - small - 6),
+                 [UIColor colorWithWhite:1 alpha:0.25]);
+        y = miniBottom;
     }
+    // The main post.
+    CGFloat avatar = size.width * 0.105;
+    drawRoundAvatar(c, margin, y, avatar);
+    CGFloat textX = margin + avatar + size.width * 0.03;
+    UIFont *nameFont = [UIFont boldSystemFontOfSize:size.height * 0.023];
+    drawText(c->artist, CGRectMake(textX, y, width - avatar, size.height * 0.03),
+             nameFont, UIColor.whiteColor, NSTextAlignmentLeft);
+    CGFloat nameWidth = [c->artist sizeWithAttributes:@{NSFontAttributeName: nameFont}].width;
+    drawVerifiedTick(textX + nameWidth + 6, y + size.height * 0.004, size.height * 0.02);
+    drawText([NSString stringWithFormat:@"@%@", handle],
+             CGRectMake(textX, y + size.height * 0.028, width - avatar, size.height * 0.025),
+             [UIFont systemFontOfSize:size.height * 0.019], grey, NSTextAlignmentLeft);
+    y += avatar + size.height * 0.018;
     UIFont *postFont = [UIFont boldSystemFontOfSize:size.height * 0.037];
-    drawText(c->current, CGRectMake(margin, y, width, size.height * 0.22), postFont, UIColor.whiteColor, NSTextAlignmentLeft);
-    y += textHeight(c->current, postFont, width) + size.height * 0.03;
+    CGFloat postH = textHeight(c->current, postFont, width);
+    drawText(c->current, CGRectMake(margin, y, width, postH + 4), postFont, UIColor.whiteColor,
+             NSTextAlignmentLeft);
+    y += postH + size.height * 0.028;
     NSDateFormatter *clock = [NSDateFormatter new];
+    clock.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
     clock.dateFormat = @"h:mm a";
     NSDateFormatter *day = [NSDateFormatter new];
+    day.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
     day.dateFormat = @"MMMM d, yyyy";
     NSDate *now = [NSDate date];
     seedRand(c->title);
-    NSInteger views = 12 + (NSInteger)(nextRand() * 880) + (sg_frameTime >= 0 ? (NSInteger)(sg_frameTime * 2.5) : 0);
-    drawText([NSString stringWithFormat:@"%@ · %@ · %ldK Views", [clock stringFromDate:now], [day stringFromDate:now], (long)views],
+    drawText([NSString stringWithFormat:@"%@ · %@", [clock stringFromDate:now], [day stringFromDate:now]],
              CGRectMake(margin, y, width, size.height * 0.025),
-             [UIFont systemFontOfSize:size.height * 0.018], [UIColor colorWithWhite:1 alpha:0.45], NSTextAlignmentLeft);
-    y += size.height * 0.045;
+             [UIFont systemFontOfSize:size.height * 0.018], grey, NSTextAlignmentLeft);
+    y += size.height * 0.030;
+    // Views on their own row: the number bold white, the word grey.
+    NSInteger views = 12 + (NSInteger)(nextRand() * 880) + (sg_frameTime >= 0 ? (NSInteger)(sg_frameTime * 2.5) : 0);
+    NSMutableAttributedString *viewsLine = [[NSMutableAttributedString alloc] init];
+    [viewsLine appendAttributedString:[[NSAttributedString alloc]
+        initWithString:[NSString stringWithFormat:@"%ldK", (long)views]
+            attributes:@{NSFontAttributeName: [UIFont boldSystemFontOfSize:size.height * 0.018],
+                         NSForegroundColorAttributeName: UIColor.whiteColor}]];
+    [viewsLine appendAttributedString:[[NSAttributedString alloc]
+        initWithString:@" Views"
+            attributes:@{NSFontAttributeName: [UIFont systemFontOfSize:size.height * 0.018],
+                         NSForegroundColorAttributeName: grey}]];
+    [viewsLine drawInRect:CGRectMake(margin, y, width, size.height * 0.025)];
+    y += size.height * 0.032;
     fillRect(CGRectMake(margin, y, width, 1), [UIColor colorWithWhite:1 alpha:0.15]);
-    y += size.height * 0.018;
-    UIFont *countFont = [UIFont systemFontOfSize:size.height * 0.019];
-    UIColor *grey = [UIColor colorWithWhite:1 alpha:0.5];
-    CGFloat x = margin;
-    for (NSString *pair in @[[NSString stringWithFormat:@"💬 %ld", (long)(40 + (NSInteger)(nextRand() * 400))],
-                             [NSString stringWithFormat:@"⟳ %ld", (long)(80 + (NSInteger)(nextRand() * 900))]]) {
-        CGFloat w = [pair sizeWithAttributes:@{NSFontAttributeName: countFont}].width + size.width * 0.06;
-        drawText(pair, CGRectMake(x, y, w, size.height * 0.025), countFont, grey, NSTextAlignmentLeft);
-        x += w;
+    y += size.height * 0.020;
+    // The action row: four stroke icons, evenly spread, counts in grey.
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGContextSaveGState(ctx);
+    [[UIColor colorWithWhite:1 alpha:0.5] setStroke];
+    [[UIColor colorWithWhite:1 alpha:0.5] setFill];
+    CGFloat icon = size.height * 0.024, slot = width / 4;
+    UIFont *countFont = [UIFont systemFontOfSize:size.height * 0.018];
+    NSArray<NSString *> *counts = @[[NSString stringWithFormat:@"%ld", (long)(40 + (NSInteger)(nextRand() * 400))],
+                                    [NSString stringWithFormat:@"%ld", (long)(80 + (NSInteger)(nextRand() * 900))],
+                                    [NSString stringWithFormat:@"%.1fK", 1 + nextRand() * 9],
+                                    [NSString stringWithFormat:@"%ld", (long)(5 + (NSInteger)(nextRand() * 60))]];
+    for (NSInteger i = 0; i < 4; i++) {
+        CGFloat ix = margin + slot * i, iy = y;
+        UIBezierPath *iconPath = [UIBezierPath bezierPath];
+        if (i == 0) {            // reply: a speech balloon with a tail
+            CGRect b = CGRectMake(ix, iy, icon * 1.15, icon * 0.88);
+            [iconPath appendPath:[UIBezierPath bezierPathWithRoundedRect:b cornerRadius:icon * 0.3]];
+            [iconPath moveToPoint:CGPointMake(ix + icon * 0.28, iy + icon * 0.88)];
+            [iconPath addLineToPoint:CGPointMake(ix + icon * 0.28, iy + icon * 1.12)];
+            [iconPath addLineToPoint:CGPointMake(ix + icon * 0.55, iy + icon * 0.88)];
+        } else if (i == 1) {     // retweet: two bent arrows chasing
+            [iconPath moveToPoint:CGPointMake(ix + icon * 0.15, iy + icon * 0.30)];
+            [iconPath addLineToPoint:CGPointMake(ix + icon * 0.85, iy + icon * 0.30)];
+            [iconPath addLineToPoint:CGPointMake(ix + icon * 0.85, iy + icon * 0.62)];
+            [iconPath moveToPoint:CGPointMake(ix + icon * 0.66, iy + icon * 0.10)];
+            [iconPath addLineToPoint:CGPointMake(ix + icon * 0.88, iy + icon * 0.30)];
+            [iconPath addLineToPoint:CGPointMake(ix + icon * 0.66, iy + icon * 0.50)];
+            [iconPath moveToPoint:CGPointMake(ix + icon * 0.85, iy + icon * 0.78)];
+            [iconPath addLineToPoint:CGPointMake(ix + icon * 0.15, iy + icon * 0.78)];
+            [iconPath addLineToPoint:CGPointMake(ix + icon * 0.15, iy + icon * 0.46)];
+            [iconPath moveToPoint:CGPointMake(ix + icon * 0.34, iy + icon * 0.98)];
+            [iconPath addLineToPoint:CGPointMake(ix + icon * 0.12, iy + icon * 0.78)];
+            [iconPath addLineToPoint:CGPointMake(ix + icon * 0.34, iy + icon * 0.58)];
+        } else if (i == 2) {     // heart
+            CGFloat hx = ix + icon * 0.55, hy = iy + icon * 0.16, r = icon * 0.30;
+            [iconPath moveToPoint:CGPointMake(hx, iy + icon * 0.98)];
+            [iconPath addCurveToPoint:CGPointMake(hx - r * 2, hy + r * 0.6)
+                        controlPoint1:CGPointMake(hx - r * 1.6, iy + icon * 0.55)
+                        controlPoint2:CGPointMake(hx - r * 1.9, hy - r * 0.5)];
+            [iconPath addCurveToPoint:CGPointMake(hx, hy + r * 0.55)
+                        controlPoint1:CGPointMake(hx - r * 0.7, hy - r * 0.75)
+                        controlPoint2:CGPointMake(hx, hy - r * 0.1)];
+            [iconPath addCurveToPoint:CGPointMake(hx + r * 2, hy + r * 0.6)
+                        controlPoint1:CGPointMake(hx, hy - r * 0.1)
+                        controlPoint2:CGPointMake(hx + r * 0.7, hy - r * 0.75)];
+            [iconPath addCurveToPoint:CGPointMake(hx, iy + icon * 0.98)
+                        controlPoint1:CGPointMake(hx + r * 1.9, hy - r * 0.5)
+                        controlPoint2:CGPointMake(hx + r * 1.6, iy + icon * 0.55)];
+        } else {                 // views: three bars, rising
+            for (int b = 0; b < 3; b++) {
+                CGFloat bh = icon * (0.45 + 0.27 * b);
+                CGRect bar = CGRectMake(ix + icon * 0.16 + b * icon * 0.34, iy + icon - bh, icon * 0.20, bh);
+                [iconPath appendPath:[UIBezierPath bezierPathWithRoundedRect:bar cornerRadius:icon * 0.06]];
+            }
+            [iconPath fill];
+        }
+        if (i != 3) { iconPath.lineWidth = MAX(1.2, size.height * 0.0016); [iconPath stroke]; }
+        drawText(counts[i], CGRectMake(ix + icon * 1.35, y + size.height * 0.002, slot - icon * 1.4, size.height * 0.025),
+                 countFont, grey, NSTextAlignmentLeft);
     }
-    NSString *hearts = [NSString stringWithFormat:@"♥ %.1fK", 1 + nextRand() * 9];
-    drawText(hearts, CGRectMake(x, y, size.width * 0.3, size.height * 0.025), countFont,
-             [UIColor colorWithRed:0.98 green:0.35 blue:0.6 alpha:1], NSTextAlignmentLeft);
+    CGContextRestoreGState(ctx);
+    y += size.height * 0.052;
+    fillRect(CGRectMake(margin, y, width, 1), [UIColor colorWithWhite:1 alpha:0.15]);
+    // The reply pill closes the card.
+    CGFloat pillY = size.height * 0.885;
+    UIBezierPath *pill = [UIBezierPath bezierPathWithRoundedRect:
+        CGRectMake(margin, pillY, width, size.height * 0.052) cornerRadius:size.height * 0.026];
+    [[UIColor colorWithWhite:1 alpha:0.35] setStroke];
+    pill.lineWidth = 1;
+    [pill stroke];
+    drawRoundAvatar(c, margin + size.width * 0.018, pillY + size.height * 0.009, size.height * 0.034);
+    drawText(@"Post your reply…", CGRectMake(margin + size.width * 0.075, pillY + size.height * 0.014,
+                                             width * 0.7, size.height * 0.028),
+             [UIFont systemFontOfSize:size.height * 0.019], grey, NSTextAlignmentLeft);
 }
 
 // Cover in letters: the line enormous and stacked, the cover showing through
@@ -613,16 +886,37 @@ static void drawCoverInLetters(SGWCtx *c) {
     words = [words filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"length > 0"]];
     if (!words.count) words = @[@"♪"];
     CGFloat fontSize = stackedFontSize(words, size, 0.88);
+    // Fit the stack to the height too, not just the width (Batch 97):
+    // a long line used to be able to stack clean off the card.
+    while (words.count * fontSize * 0.94 > size.height * 0.78 && fontSize > size.height * 0.04) {
+        fontSize *= 0.94;
+    }
     UIImage *mask = knockoutImage(size, ^{
         drawStackedWords(words, fontSize, size.height * 0.05, size, YES, UIColor.whiteColor);
     });
     if (c->cover) {
+        // Outside the letters, the cover sits dim under a gathering
+        // scrim; inside them it burns at full strength (Batch 97: the
+        // scrim used to be laid over the whole cover BEFORE the letters
+        // cut in, so the letters revealed a pre-darkened photo and the
+        // poster read as dim text on a dark picture).
         if (sg_frameTime >= 0) drawCoverInRect(c->cover, breathingRect(CGRectMake(0, 0, size.width, size.height), size.width * 0.03, size.width * 0.008));
         else drawCoverFilled(c->cover, size);
+        drawScrim(size, 0.35, 0.80);
+        UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+        format.scale = 1;
+        format.opaque = NO;
+        UIImage *coverImage = c->cover;
+        UIImage *letters = [[[UIGraphicsImageRenderer alloc] initWithSize:size format:format]
+            imageWithActions:^(UIGraphicsImageRendererContext *letterContext) {
+            if (sg_frameTime >= 0) drawCoverInRect(coverImage, breathingRect(CGRectMake(0, 0, size.width, size.height), size.width * 0.03, size.width * 0.008));
+            else drawCoverFilled(coverImage, size);
+            [mask drawInRect:CGRectMake(0, 0, size.width, size.height)];
+        }];
+        [letters drawInRect:CGRectMake(0, 0, size.width, size.height)];
+    } else {
+        [mask drawInRect:CGRectMake(0, 0, size.width, size.height)];
     }
-    // The fade down: darkness gathered over the cover before the letters cut in.
-    drawScrim(size, 0.10, 0.88);
-    [mask drawInRect:CGRectMake(0, 0, size.width, size.height)];
     CGFloat creditY = size.height * 0.05 + fontSize * 0.94 * words.count + size.height * 0.03;
     NSString *credit = [NSString stringWithFormat:@"%@ — %@", c->title.uppercaseString, c->artist.uppercaseString];
     drawText(credit, CGRectMake(0, MIN(creditY, size.height * 0.88), size.width, size.height * 0.025),
@@ -647,18 +941,34 @@ static void drawMagazine(SGWCtx *c) {
     y += size.height * 0.065;
     NSDateFormatter *month = [NSDateFormatter new];
     month.dateFormat = @"MMMM yyyy";
-    NSString *small = [NSString stringWithFormat:@"Nº %ld      %@      %@", (long)(c->index + 1),
-                       c->title.uppercaseString, [[month stringFromDate:[NSDate date]] uppercaseString]];
-    drawText(small, CGRectMake(margin, y, width, size.height * 0.02),
-             [UIFont systemFontOfSize:size.height * 0.014 weight:UIFontWeightMedium],
-             [UIColor colorWithWhite:1 alpha:0.85], NSTextAlignmentCenter);
+    // The furniture line, split the way covers split it (Batch 97):
+    // the date at the left edge, the issue number at the right.
+    UIFont *furniture = [UIFont systemFontOfSize:size.height * 0.013 weight:UIFontWeightSemibold];
+    UIColor *furnitureInk = [UIColor colorWithWhite:1 alpha:0.85];
+    drawText([[month stringFromDate:[NSDate date]] uppercaseString],
+             CGRectMake(margin, y, width, size.height * 0.02), furniture, furnitureInk, NSTextAlignmentLeft);
+    drawText([NSString stringWithFormat:@"Nº %ld", (long)(c->index + 1)],
+             CGRectMake(margin, y, width, size.height * 0.02), furniture, furnitureInk, NSTextAlignmentRight);
     if (c->prev.length) {
+        // A cover line with the classic colour block behind it.
+        UIFont *teaser = serifFont(size.height * 0.019, UIFontWeightRegular, YES);
+        CGFloat teaserH = textHeight(c->prev, teaser, width * 0.55);
+        CGRect block = CGRectMake(margin - size.width * 0.012, size.height * 0.295,
+                                  MIN(width * 0.58, [c->prev sizeWithAttributes:@{NSFontAttributeName: teaser}].width + size.width * 0.024),
+                                  teaserH + size.height * 0.016);
+        fillRect(block, c->accent ?: [UIColor colorWithRed:0.9 green:0.2 blue:0.2 alpha:1]);
         drawText(c->prev, CGRectMake(margin, size.height * 0.30, width * 0.55, size.height * 0.08),
-                 serifFont(size.height * 0.019, UIFontWeightRegular, YES),
-                 [UIColor colorWithWhite:1 alpha:0.8], NSTextAlignmentLeft);
+                 teaser, [UIColor colorWithWhite:0.05 alpha:1], NSTextAlignmentLeft);
     }
-    UIFont *headline = serifFont(size.height * 0.044, UIFontWeightBold, NO);
-    CGFloat headlineY = size.height * 0.52;
+    // A second cover line down the right edge: the song's name, shouted
+    // in bold sans in the accent — covers mix their treatments.
+    if (c->title.length) {
+        drawText(c->title.uppercaseString, CGRectMake(margin, size.height * 0.30, width, size.height * 0.03),
+                 [UIFont boldSystemFontOfSize:size.height * 0.020],
+                 c->accent ?: [UIColor colorWithWhite:1 alpha:0.9], NSTextAlignmentRight);
+    }
+    UIFont *headline = serifFont(size.height * 0.048, UIFontWeightBold, NO);
+    CGFloat headlineY = size.height * 0.46;
     drawText(c->current, CGRectMake(margin, headlineY, width, size.height * 0.17), headline, UIColor.whiteColor, NSTextAlignmentLeft);
     CGFloat y2 = headlineY + textHeight(c->current, headline, width) + size.height * 0.012;
     if (c->line.translation.length) {
@@ -671,6 +981,24 @@ static void drawMagazine(SGWCtx *c) {
                  serifFont(size.height * 0.016, UIFontWeightRegular, YES),
                  [UIColor colorWithWhite:1 alpha:0.75], NSTextAlignmentRight);
     }
+    // The barcode, bottom-left — the most recognisable object on any
+    // real cover (Batch 97): white block, seeded bars, the small print.
+    CGRect barcode = CGRectMake(margin, size.height * 0.885, size.width * 0.17, size.height * 0.072);
+    fillRect(barcode, UIColor.whiteColor);
+    seedRand(c->title);
+    CGFloat bx = barcode.origin.x + size.width * 0.008;
+    while (bx < CGRectGetMaxX(barcode) - size.width * 0.008) {
+        CGFloat bw = 1 + nextRand() * 3;
+        if (nextRand() > 0.35) {
+            fillRect(CGRectMake(bx, barcode.origin.y + size.height * 0.006, bw, size.height * 0.042),
+                     [UIColor colorWithWhite:0.05 alpha:1]);
+        }
+        bx += bw + 1 + nextRand() * 2;
+    }
+    drawText([NSString stringWithFormat:@"£%.2f · Nº %ld", 5 + nextRand() * 8, (long)(c->index + 1)],
+             CGRectMake(barcode.origin.x, barcode.origin.y + size.height * 0.050, barcode.size.width, size.height * 0.018),
+             monoFont(size.height * 0.0105, UIFontWeightRegular), [UIColor colorWithWhite:0.10 alpha:1],
+             NSTextAlignmentCenter);
 }
 
 // Duotone: the cover in two tones of its own — its darkest colour and its
@@ -678,14 +1006,26 @@ static void drawMagazine(SGWCtx *c) {
 static void drawDuotone(SGWCtx *c) {
     CGSize size = c->size;
     fillRect(CGRectMake(0, 0, size.width, size.height), UIColor.blackColor);
+    UIColor *inkBand = nil;
     if (c->cover) {
+        // Two inks, printed properly (Batch 97): shadows in the dark ink,
+        // highlights landing on PAPER — the accent blended most of the
+        // way to white — with a mid mix between them. The accent used to
+        // be the highlight itself, which solarised everything candy.
         UIColor *dark = [UIColor colorWithWhite:0.04 alpha:1];
-        UIColor *light = c->accent ?: [UIColor colorWithRed:0.95 green:0.75 blue:0.35 alpha:1];
+        UIColor *base = c->accent ?: [UIColor colorWithRed:0.95 green:0.75 blue:0.35 alpha:1];
+        CGFloat pr, pg, pb, pa;
+        [base getRed:&pr green:&pg blue:&pb alpha:&pa];
+        UIColor *light = [UIColor colorWithRed:pr + (1 - pr) * 0.82 green:pg + (1 - pg) * 0.82
+                                          blue:pb + (1 - pb) * 0.82 alpha:1];
+        UIColor *mid = [UIColor colorWithRed:pr + (1 - pr) * 0.38 green:pg + (1 - pg) * 0.38
+                                        blue:pb + (1 - pb) * 0.38 alpha:1];
         if (c->average) {
             CGFloat h = 0, s = 0, b = 0;
             [c->average getHue:&h saturation:&s brightness:&b alpha:NULL];
-            dark = [UIColor colorWithHue:h saturation:MIN(1, s + 0.2) brightness:0.10 alpha:1];
+            dark = [UIColor colorWithHue:h saturation:MIN(0.75, s + 0.2) brightness:0.16 alpha:1];
         }
+        inkBand = dark;
         UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
         format.scale = 1;
         format.opaque = YES;
@@ -693,8 +1033,9 @@ static void drawDuotone(SGWCtx *c) {
             imageWithActions:^(UIGraphicsImageRendererContext *stripContext) {
             CGContextRef ctx = stripContext.CGContext;
             CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-            NSArray *colors = @[(id)dark.CGColor, (id)light.CGColor];
-            CGGradientRef gradient = CGGradientCreateWithColors(space, (__bridge CFArrayRef)colors, NULL);
+            NSArray *colors = @[(id)dark.CGColor, (id)mid.CGColor, (id)light.CGColor];
+            CGFloat stops[] = {0, 0.55, 1};
+            CGGradientRef gradient = CGGradientCreateWithColors(space, (__bridge CFArrayRef)colors, stops);
             CGContextDrawLinearGradient(ctx, gradient, CGPointZero, CGPointMake(256, 0), 0);
             CGGradientRelease(gradient);
             CGColorSpaceRelease(space);
@@ -708,10 +1049,17 @@ static void drawDuotone(SGWCtx *c) {
         } else if (toned) drawCoverFilled(toned, size);
         else drawCoverFilled(c->cover, size);
     }
-    drawScrim(size, 0.0, 0.35);
+    // The words sit on a solid band of the ink — a printed caption band,
+    // which guarantees they read over any photograph (Batch 97).
+    if (inkBand) {
+        fillRect(CGRectMake(0, size.height * 0.78, size.width, size.height * 0.22),
+                 [inkBand colorWithAlphaComponent:0.92]);
+    } else {
+        drawScrim(size, 0.0, 0.35);
+    }
     CGFloat margin = size.width * 0.07, width = size.width - 2 * margin;
     UIFont *nowFont = [UIFont boldSystemFontOfSize:size.height * 0.034];
-    CGFloat y = size.height * 0.78;
+    CGFloat y = size.height * 0.805;
     drawText(c->current, CGRectMake(margin, y, width, size.height * 0.10), nowFont, UIColor.whiteColor, NSTextAlignmentLeft);
     y += textHeight(c->current, nowFont, width) + size.height * 0.01;
     drawText(c->next, CGRectMake(margin, y, width, size.height * 0.05),
@@ -721,55 +1069,107 @@ static void drawDuotone(SGWCtx *c) {
 // Word collage: the song's words as ransom-note strips over red, the line
 // itself set plain in a grey panel in the middle. The chaos is seeded by the
 // song, so a given line always lands the same way.
+// One cut-paper strip: a word on its own scrap, in one of the collage's
+// typefaces, at its own angle, lifted off the board by its shadow.
+static void drawStrip(SGWCtx *c, NSString *word, CGFloat fontSize, NSInteger variant,
+                      CGPoint centre, CGFloat angle, BOOL hero) {
+    CGSize size = c->size;
+    UIFont *font;
+    switch (variant % 5) {
+        case 0: font = [UIFont boldSystemFontOfSize:fontSize]; break;
+        case 1: font = serifFont(fontSize, UIFontWeightBold, NO); break;
+        case 2: font = monoFont(fontSize, UIFontWeightBold); break;
+        case 3: font = [UIFont systemFontOfSize:fontSize weight:UIFontWeightBlack]; break;
+        default: font = serifFont(fontSize, UIFontWeightRegular, YES); break;
+    }
+    NSString *shown = word;
+    NSInteger casing = (NSInteger)(nextRand() * 3);
+    if (casing == 0) shown = word.uppercaseString;
+    else if (casing == 1) shown = word.lowercaseString;
+    CGSize wordSize = [shown sizeWithAttributes:@{NSFontAttributeName: font}];
+    CGFloat w = wordSize.width + size.width * (hero ? 0.045 : 0.032);
+    CGFloat h = wordSize.height + size.height * (hero ? 0.018 : 0.013);
+    NSArray<UIColor *> *papers = @[UIColor.whiteColor,
+                                   [UIColor colorWithRed:0.96 green:0.93 blue:0.85 alpha:1],
+                                   [UIColor colorWithWhite:0.10 alpha:1],
+                                   [UIColor colorWithWhite:0.80 alpha:1],
+                                   c->accent ?: [UIColor colorWithRed:0.95 green:0.80 blue:0.20 alpha:1]];
+    NSUInteger pick = (NSUInteger)(nextRand() * papers.count) % papers.count;
+    UIColor *paper = papers[pick];
+    BOOL darkPaper = pick == 2;
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGContextSaveGState(ctx);
+    CGContextTranslateCTM(ctx, centre.x, centre.y);
+    CGContextRotateCTM(ctx, angle);
+    CGContextSetShadowWithColor(ctx, CGSizeMake(0, size.height * 0.003), size.height * 0.006,
+                                [UIColor colorWithWhite:0 alpha:0.35].CGColor);
+    fillRect(CGRectMake(-w / 2, -h / 2, w, h), paper);
+    CGContextSetShadowWithColor(ctx, CGSizeZero, 0, NULL);
+    UIBezierPath *edge = [UIBezierPath bezierPathWithRect:CGRectMake(-w / 2, -h / 2, w, h)];
+    [[UIColor colorWithWhite:0 alpha:0.18] setStroke];
+    edge.lineWidth = 0.75;
+    [edge stroke];
+    drawText(shown, CGRectMake(-w / 2, -h / 2 + size.height * 0.003, w, h), font,
+             darkPaper ? UIColor.whiteColor : [UIColor colorWithWhite:0.07 alpha:1],
+             NSTextAlignmentCenter);
+    CGContextRestoreGState(ctx);
+}
+
 static void drawWordCollage(SGWCtx *c) {
     CGSize size = c->size;
-    fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithRed:0.80 green:0.07 blue:0.09 alpha:1]);
-    seedRand([NSString stringWithFormat:@"%@%ld", c->title, (long)c->index]);
-    NSMutableArray<NSString *> *strips = [NSMutableArray array];
-    for (NSString *word in [c->current componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceCharacterSet]) {
-        if (word.length) [strips addObject:word];
-    }
-    for (NSString *extra in @[c->prev, c->title.uppercaseString, c->artist.uppercaseString]) {
-        if (extra.length) [strips addObject:extra];
-    }
-    NSArray<UIColor *> *papers = @[UIColor.whiteColor, [UIColor colorWithWhite:0.08 alpha:1],
-                                   [UIColor colorWithWhite:0.82 alpha:1], [UIColor colorWithRed:0.55 green:0.04 blue:0.05 alpha:1]];
+    // The board: a deep red, darkened toward the corners (Batch 97: the
+    // old collage glued whole sentences down as strips and printed the
+    // line neatly in a panel in the middle. Now every strip is a single
+    // cut word, the furniture is gone, and the line being sung is built
+    // out of the biggest strips in the middle of the board.)
+    fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithRed:0.48 green:0.05 blue:0.06 alpha:1]);
     CGContextRef ctx = UIGraphicsGetCurrentContext();
-    for (NSUInteger i = 0; i < strips.count; i++) {
-        NSString *word = strips[i];
-        CGFloat fontSize = size.height * (0.020 + nextRand() * 0.022);
-        UIFont *font = [UIFont boldSystemFontOfSize:fontSize];
-        CGSize wordSize = [word sizeWithAttributes:@{NSFontAttributeName: font}];
-        CGFloat w = wordSize.width + size.width * 0.03, h = wordSize.height + size.height * 0.012;
-        CGFloat x = nextRand() * (size.width - w), y = nextRand() * (size.height - h);
-        if (y > size.height * 0.38 && y < size.height * 0.62) y += size.height * 0.30;
-        NSUInteger pick = (NSUInteger)(nextRand() * papers.count) % papers.count;
-        UIColor *paper = papers[pick];
-        BOOL darkPaper = pick == 1 || pick == 3;
-        CGContextSaveGState(ctx);
-        CGContextTranslateCTM(ctx, x + w / 2, y + h / 2);
-        CGContextRotateCTM(ctx, (nextRand() - 0.5) * 0.35);
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    NSArray *shades = @[(id)[UIColor colorWithWhite:0 alpha:0].CGColor,
+                        (id)[UIColor colorWithWhite:0 alpha:0.28].CGColor];
+    CGGradientRef vignette = CGGradientCreateWithColors(space, (__bridge CFArrayRef)shades, NULL);
+    CGContextDrawRadialGradient(ctx, vignette, CGPointMake(size.width / 2, size.height / 2),
+                                size.height * 0.25, CGPointMake(size.width / 2, size.height / 2),
+                                size.height * 0.85, kCGGradientDrawsAfterEndLocation);
+    CGGradientRelease(vignette);
+    CGColorSpaceRelease(space);
+    seedRand([NSString stringWithFormat:@"%@%ld", c->title, (long)c->index]);
+    NSCharacterSet *spaces = NSCharacterSet.whitespaceAndNewlineCharacterSet;
+    // The scatter: single words from the lines around this one and the
+    // song's name, anywhere on the board, overlapping as they fall.
+    NSMutableArray<NSString *> *scatter = [NSMutableArray array];
+    for (NSString *word in [c->prev componentsSeparatedByCharactersInSet:spaces]) if (word.length) [scatter addObject:word];
+    for (NSString *word in [c->next componentsSeparatedByCharactersInSet:spaces]) if (word.length) [scatter addObject:word];
+    for (NSString *word in [c->title componentsSeparatedByCharactersInSet:spaces]) if (word.length) [scatter addObject:word];
+    for (NSString *word in [c->artist componentsSeparatedByCharactersInSet:spaces]) if (word.length) [scatter addObject:word];
+    NSInteger shown = 0;
+    for (NSString *word in scatter) {
+        if (shown++ >= 16) break;
+        CGFloat fs = size.height * (0.019 + nextRand() * 0.016);
+        CGPoint at = CGPointMake(size.width * (0.10 + nextRand() * 0.80),
+                                 size.height * (0.06 + nextRand() * 0.88));
+        drawStrip(c, word, fs, (NSInteger)(nextRand() * 5), at, (nextRand() - 0.5) * 0.30, NO);
+    }
+    // The hero cluster: the line being sung, word by word, big, flowing
+    // across the middle of the board and drawn last, on top of the mess.
+    NSArray<NSString *> *hero = [c->current componentsSeparatedByCharactersInSet:spaces];
+    CGFloat x = size.width * 0.08, y = size.height * 0.40;
+    NSInteger variant = 0;
+    for (NSString *word in hero) {
+        if (!word.length) continue;
+        CGFloat fs = size.height * (0.042 + nextRand() * 0.016);
+        UIFont *probe = [UIFont boldSystemFontOfSize:fs];
+        CGFloat w = [word sizeWithAttributes:@{NSFontAttributeName: probe}].width + size.width * 0.055;
+        if (x + w > size.width * 0.94) { x = size.width * (0.08 + nextRand() * 0.05); y += size.height * 0.105; }
+        CGFloat slide = 0;
         if (sg_frameTime >= 0) {
-            double k = MIN(1, MAX(0, (sg_frameTime - i * 0.06) / 0.3));
-            double e = 1 - pow(1 - k, 3);
-            CGContextTranslateCTM(ctx, 0, (1 - e) * size.height * 0.035 * ((i % 2) ? 1 : -1));
+            double k = MIN(1, MAX(0, (sg_frameTime - variant * 0.06) / 0.3));
+            slide = (1 - (1 - pow(1 - k, 3))) * size.height * 0.03 * ((variant % 2) ? 1 : -1);
         }
-        fillRect(CGRectMake(-w / 2, -h / 2, w, h), paper);
-        drawText(word, CGRectMake(-w / 2, -h / 2 + size.height * 0.004, w, h), font,
-                 darkPaper ? UIColor.whiteColor : [UIColor colorWithWhite:0.08 alpha:1], NSTextAlignmentCenter);
-        CGContextRestoreGState(ctx);
+        drawStrip(c, word, fs, variant, CGPointMake(x + w / 2, y + slide), (nextRand() - 0.5) * 0.16, YES);
+        x += w + size.width * 0.018;
+        variant++;
     }
-    CGRect panel = CGRectMake(size.width * 0.07, size.height * 0.415, size.width * 0.86, size.height * 0.17);
-    fillRect(panel, [UIColor colorWithWhite:0.80 alpha:1]);
-    CGFloat fontSize = size.height * 0.034;
-    UIFont *font = [UIFont boldSystemFontOfSize:fontSize];
-    while (fontSize > size.height * 0.016 &&
-           [c->current sizeWithAttributes:@{NSFontAttributeName: font}].width > panel.size.width * 0.9) {
-        fontSize *= 0.9;
-        font = [UIFont boldSystemFontOfSize:fontSize];
-    }
-    drawText(c->current, CGRectInset(panel, size.width * 0.03, size.height * 0.02), font,
-             [UIColor colorWithWhite:0.06 alpha:1], NSTextAlignmentCenter);
 }
 
 // Cyberpunk chat: the Chat's neon sibling — a red-ruled frame, the song as the
@@ -781,9 +1181,18 @@ static void drawCyberpunk(SGWCtx *c) {
     UIColor *neon = [UIColor colorWithRed:1 green:0.16 blue:0.32 alpha:1];
     UIColor *green = [UIColor colorWithRed:0.15 green:0.95 blue:0.45 alpha:1];
     CGContextRef ctx = UIGraphicsGetCurrentContext();
+    // Neon glows (Batch 97): a bright core with a blurred halo, laid as
+    // three strokes of falling alpha — the flat 2pt lines read as arcade.
+    CGRect frameOuter = CGRectMake(size.width * 0.03, size.height * 0.025, size.width * 0.94, size.height * 0.95);
+    CGContextSetStrokeColorWithColor(ctx, [neon colorWithAlphaComponent:0.16].CGColor);
+    CGContextSetLineWidth(ctx, 7);
+    CGContextStrokeRect(ctx, frameOuter);
+    CGContextSetStrokeColorWithColor(ctx, [neon colorWithAlphaComponent:0.35].CGColor);
+    CGContextSetLineWidth(ctx, 3.5);
+    CGContextStrokeRect(ctx, frameOuter);
     CGContextSetStrokeColorWithColor(ctx, neon.CGColor);
-    CGContextSetLineWidth(ctx, 2);
-    CGContextStrokeRect(ctx, CGRectMake(size.width * 0.03, size.height * 0.025, size.width * 0.94, size.height * 0.95));
+    CGContextSetLineWidth(ctx, 1.5);
+    CGContextStrokeRect(ctx, frameOuter);
     CGContextSetLineWidth(ctx, 1);
     CGContextStrokeRect(ctx, CGRectMake(size.width * 0.045, size.height * 0.037, size.width * 0.91, size.height * 0.926));
     if (sg_frameTime >= 0) {
@@ -799,8 +1208,10 @@ static void drawCyberpunk(SGWCtx *c) {
              CGRectMake(margin, y, width, size.height * 0.025), monoFont(size.height * 0.018, UIFontWeightBold),
              green, NSTextAlignmentLeft);
     y += size.height * 0.045;
-    UIFont *font = [UIFont systemFontOfSize:size.height * 0.030];
-    UIFont *nowFont = [UIFont systemFontOfSize:size.height * 0.034 weight:UIFontWeightSemibold];
+    // The chat speaks mono, like its header (Batch 97).
+    UIFont *font = monoFont(size.height * 0.027, UIFontWeightRegular);
+    UIFont *nowFont = monoFont(size.height * 0.030, UIFontWeightBold);
+    NSInteger starts[3] = {c->prevStart, c->line.start, c->nextStart};
     // Incoming outlined bubbles for what was sung, a filled one for the line,
     // an outlined one for what is next.
     struct { __unsafe_unretained NSString *text; __unsafe_unretained UIFont *font; __unsafe_unretained UIColor *fill; __unsafe_unretained UIColor *stroke; __unsafe_unretained UIColor *ink; BOOL right; } rows[3] = {
@@ -810,6 +1221,15 @@ static void drawCyberpunk(SGWCtx *c) {
     };
     for (int i = 0; i < 3; i++) {
         if (!rows[i].text.length) continue;
+        // The sender tag over each side's first bubble.
+        if (i == 0 || i == 1) {
+            drawText(i == 0 ? @"▶ THEM" : @"▶ YOU",
+                     CGRectMake(margin, y, width, size.height * 0.018),
+                     monoFont(size.height * 0.013, UIFontWeightBold),
+                     [green colorWithAlphaComponent:0.55],
+                     i == 0 ? NSTextAlignmentLeft : NSTextAlignmentRight);
+            y += size.height * 0.024;
+        }
         CGFloat maxText = size.width * 0.62;
         CGRect measured = [rows[i].text boundingRectWithSize:CGSizeMake(maxText, CGFLOAT_MAX)
                                                      options:NSStringDrawingUsesLineFragmentOrigin
@@ -819,26 +1239,88 @@ static void drawCyberpunk(SGWCtx *c) {
         CGFloat x = rows[i].right ? size.width * 0.91 - w : margin;
         CGRect bubble = CGRectMake(x, y, w, h);
         UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:bubble cornerRadius:h * 0.30];
-        if (rows[i].fill) { [rows[i].fill setFill]; [path fill]; }
+        if (rows[i].fill) {
+            // The sent bubble glows like the frame does.
+            [[green colorWithAlphaComponent:0.18] setStroke];
+            path.lineWidth = 6;
+            [path stroke];
+            [[green colorWithAlphaComponent:0.35] setStroke];
+            path.lineWidth = 3;
+            [path stroke];
+            [rows[i].fill setFill];
+            [path fill];
+        }
         if (rows[i].stroke) { [rows[i].stroke setStroke]; path.lineWidth = 1.5; [path stroke]; }
         drawText(rows[i].text, CGRectMake(x + padX, y + padY, measured.size.width, measured.size.height),
                  rows[i].font, rows[i].ink, NSTextAlignmentLeft);
-        y += h + size.height * 0.018;
+        y += h + size.height * 0.006;
+        // The timestamp under the bubble, the way chats stamp them.
+        drawText(fmtClock(starts[i]), CGRectMake(x, y, w, size.height * 0.016),
+                 monoFont(size.height * 0.012, UIFontWeightRegular),
+                 [green colorWithAlphaComponent:0.45],
+                 rows[i].right ? NSTextAlignmentRight : NSTextAlignmentLeft);
+        y += size.height * 0.026;
     }
+    // The input bar along the frame's foot: a chat client is dense to
+    // its bottom edge, and this closes the old empty lower half.
+    CGFloat barY = size.height * 0.885;
+    UIBezierPath *bar = [UIBezierPath bezierPathWithRoundedRect:
+        CGRectMake(margin, barY, width, size.height * 0.045) cornerRadius:size.height * 0.022];
+    [green setStroke];
+    bar.lineWidth = 1.5;
+    [bar stroke];
+    drawText(@"> _", CGRectMake(margin + size.width * 0.03, barY + size.height * 0.011, width * 0.5, size.height * 0.025),
+             monoFont(size.height * 0.018, UIFontWeightBold), green, NSTextAlignmentLeft);
+    UIBezierPath *send = [UIBezierPath bezierPath];
+    CGPoint tip = CGPointMake(size.width * 0.875, barY + size.height * 0.0225);
+    [send moveToPoint:CGPointMake(tip.x - size.width * 0.014, tip.y - size.height * 0.008)];
+    [send addLineToPoint:CGPointMake(tip.x + size.width * 0.014, tip.y)];
+    [send addLineToPoint:CGPointMake(tip.x - size.width * 0.014, tip.y + size.height * 0.008)];
+    [send closePath];
+    [green setFill];
+    [send fill];
 }
 
 // Old TV: the song on a CRT in a dark room — rabbit ears, knobs, scanlines, a
 // green PLAY tag and the line glowing on curved glass.
 static void drawOldTV(SGWCtx *c) {
     CGSize size = c->size;
-    fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithWhite:0.02 alpha:1]);
+    // A room for the set to sit in (Batch 97): wall above, floor below,
+    // instead of the void it used to float in.
+    CGContextRef roomCtx = UIGraphicsGetCurrentContext();
+    CGColorSpaceRef roomSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    NSArray *room = @[(id)[UIColor colorWithWhite:0.055 alpha:1].CGColor,
+                      (id)[UIColor colorWithWhite:0.105 alpha:1].CGColor,
+                      (id)[UIColor colorWithWhite:0.028 alpha:1].CGColor];
+    CGFloat roomStops[] = {0, 0.72, 1};
+    CGGradientRef roomGrad = CGGradientCreateWithColors(roomSpace, (__bridge CFArrayRef)room, roomStops);
+    CGContextDrawLinearGradient(roomCtx, roomGrad, CGPointZero, CGPointMake(0, size.height), 0);
+    CGGradientRelease(roomGrad);
+    CGColorSpaceRelease(roomSpace);
     if (c->average) fillRect(CGRectMake(0, 0, size.width, size.height), [c->average colorWithAlphaComponent:0.08]);
     CGContextRef ctx = UIGraphicsGetCurrentContext();
     CGRect body = CGRectMake(size.width * 0.08, size.height * 0.20, size.width * 0.84, size.height * 0.46);
-    // Rabbit ears.
+    // Its shadow on the floor, and two feet.
+    CGContextSaveGState(ctx);
+    CGContextSetShadowWithColor(ctx, CGSizeMake(0, size.height * 0.010), size.height * 0.018,
+                                [UIColor colorWithWhite:0 alpha:0.5].CGColor);
+    [[UIColor colorWithWhite:0.02 alpha:1] setFill];
+    [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(body.origin.x + size.width * 0.03,
+                                                       CGRectGetMaxY(body) + size.height * 0.018,
+                                                       body.size.width - size.width * 0.06,
+                                                       size.height * 0.030)] fill];
+    CGContextRestoreGState(ctx);
+    fillRect(CGRectMake(body.origin.x + size.width * 0.07, CGRectGetMaxY(body) - 2, size.width * 0.07, size.height * 0.024),
+             [UIColor colorWithWhite:0.09 alpha:1]);
+    fillRect(CGRectMake(CGRectGetMaxX(body) - size.width * 0.14, CGRectGetMaxY(body) - 2, size.width * 0.07, size.height * 0.024),
+             [UIColor colorWithWhite:0.09 alpha:1]);
+    // Rabbit ears, out of a little mount on the set's top.
+    CGRect mount = CGRectMake(CGRectGetMidX(body) - size.width * 0.035, body.origin.y - size.height * 0.012,
+                              size.width * 0.07, size.height * 0.014);
+    fillRect(mount, [UIColor colorWithWhite:0.22 alpha:1]);
     CGContextSetStrokeColorWithColor(ctx, [UIColor colorWithWhite:1 alpha:0.55].CGColor);
     CGContextSetLineWidth(ctx, 3);
-    CGPoint top = CGPointMake(CGRectGetMidX(body), body.origin.y);
+    CGPoint top = CGPointMake(CGRectGetMidX(body), body.origin.y - size.height * 0.010);
     CGPoint earL = CGPointMake(size.width * 0.22, size.height * 0.055), earR = CGPointMake(size.width * 0.78, size.height * 0.055);
     CGContextMoveToPoint(ctx, top.x, top.y);
     CGContextAddLineToPoint(ctx, earL.x, earL.y);
@@ -853,19 +1335,36 @@ static void drawOldTV(SGWCtx *c) {
     fillRect(body, [UIColor colorWithWhite:0.14 alpha:1]);
     UIBezierPath *bodyPath = [UIBezierPath bezierPathWithRoundedRect:body cornerRadius:size.height * 0.025];
     [bodyPath fill];
+    // A lit top edge on the body, so the box has depth.
+    CGContextSaveGState(ctx);
+    [bodyPath addClip];
+    fillRect(CGRectMake(body.origin.x, body.origin.y, body.size.width, 2.5),
+             [UIColor colorWithWhite:1 alpha:0.18]);
+    CGContextRestoreGState(ctx);
     CGRect screen = CGRectMake(body.origin.x + size.width * 0.035, body.origin.y + size.height * 0.035,
                                body.size.width * 0.76, body.size.height - size.height * 0.07);
+    // The bezel ring first, then the glass inside it.
     UIBezierPath *screenPath = [UIBezierPath bezierPathWithRoundedRect:screen cornerRadius:size.height * 0.045];
-    fillRect(screen, [UIColor colorWithWhite:0.05 alpha:1]);
+    [[UIColor colorWithWhite:0.20 alpha:1] setFill];
     [screenPath fill];
+    CGRect glass = CGRectInset(screen, size.width * 0.008, size.height * 0.008);
+    UIBezierPath *glassPath = [UIBezierPath bezierPathWithRoundedRect:glass cornerRadius:size.height * 0.040];
+    [[UIColor colorWithWhite:0.05 alpha:1] setFill];
+    [glassPath fill];
     CGContextSaveGState(ctx);
-    [screenPath addClip];
+    [glassPath addClip];
     if (c->cover) {
         drawCoverInRect(c->cover, screen);
         fillRect(screen, [UIColor colorWithWhite:0 alpha:0.45]);
     }
-    [[UIColor colorWithWhite:0 alpha:0.10] setFill];
-    for (CGFloat ly = screen.origin.y; ly < CGRectGetMaxY(screen); ly += 5) UIRectFill(CGRectMake(screen.origin.x, ly, screen.size.width, 1.5));
+    // Finer scanlines, and the slow bright band that rolls up a CRT.
+    [[UIColor colorWithWhite:0 alpha:0.07] setFill];
+    for (CGFloat ly = screen.origin.y; ly < CGRectGetMaxY(screen); ly += 3) UIRectFill(CGRectMake(screen.origin.x, ly, screen.size.width, 1));
+    CGFloat rollY = sg_frameTime >= 0
+        ? screen.origin.y + fmod(sg_frameTime * screen.size.height * 0.22, screen.size.height)
+        : screen.origin.y + screen.size.height * 0.30;
+    fillRect(CGRectMake(screen.origin.x, rollY, screen.size.width, screen.size.height * 0.16),
+             [UIColor colorWithWhite:1 alpha:0.04]);
     CGFloat sx = screen.origin.x + size.width * 0.03, sw = screen.size.width - size.width * 0.06;
     drawText(@"▶ PLAY", CGRectMake(sx, screen.origin.y + size.height * 0.015, sw * 0.5, size.height * 0.022),
              monoFont(size.height * 0.016, UIFontWeightBold), [UIColor colorWithRed:0.3 green:1 blue:0.4 alpha:1], NSTextAlignmentLeft);
@@ -890,6 +1389,26 @@ static void drawOldTV(SGWCtx *c) {
                  [UIFont systemFontOfSize:size.height * 0.018], [UIColor colorWithRed:0.62 green:0.80 blue:1 alpha:1], NSTextAlignmentLeft);
     }
     CGContextRestoreGState(ctx);
+    // The glass itself: a diagonal reflection across the top and the
+    // corners falling dark, the way a curved tube reads in a photo.
+    CGContextSaveGState(ctx);
+    [glassPath addClip];
+    CGColorSpaceRef glassSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    NSArray *sheen = @[(id)[UIColor colorWithWhite:1 alpha:0.10].CGColor,
+                       (id)[UIColor colorWithWhite:1 alpha:0].CGColor];
+    CGGradientRef sheenGrad = CGGradientCreateWithColors(glassSpace, (__bridge CFArrayRef)sheen, NULL);
+    CGContextDrawLinearGradient(ctx, sheenGrad, CGPointMake(glass.origin.x, glass.origin.y),
+                                CGPointMake(CGRectGetMaxX(glass), glass.origin.y + glass.size.height * 0.55), 0);
+    CGGradientRelease(sheenGrad);
+    NSArray *vignetteCols = @[(id)[UIColor colorWithWhite:0 alpha:0].CGColor,
+                              (id)[UIColor colorWithWhite:0 alpha:0.35].CGColor];
+    CGGradientRef vigGrad = CGGradientCreateWithColors(glassSpace, (__bridge CFArrayRef)vignetteCols, NULL);
+    CGPoint glassCentre = CGPointMake(CGRectGetMidX(glass), CGRectGetMidY(glass));
+    CGContextDrawRadialGradient(ctx, vigGrad, glassCentre, glass.size.height * 0.36,
+                                glassCentre, glass.size.width * 0.72, kCGGradientDrawsAfterEndLocation);
+    CGGradientRelease(vigGrad);
+    CGColorSpaceRelease(glassSpace);
+    CGContextRestoreGState(ctx);
     // Knobs down the right side.
     CGFloat knobX = CGRectGetMaxX(screen) + body.size.width * 0.075;
     for (int i = 0; i < 2; i++) {
@@ -899,6 +1418,14 @@ static void drawOldTV(SGWCtx *c) {
         [[UIBezierPath bezierPathWithOvalInRect:knob] fill];
         [[UIColor colorWithWhite:1 alpha:0.5] setFill];
         UIRectFill(CGRectMake(CGRectGetMidX(knob) - 1, knob.origin.y + 3, 2, knob.size.height * 0.35));
+    }
+    // The speaker slots under the knobs.
+    [[UIColor colorWithWhite:1 alpha:0.22] setFill];
+    for (int s = 0; s < 5; s++) {
+        CGRect slot = CGRectMake(CGRectGetMaxX(screen) + body.size.width * 0.028,
+                                 body.origin.y + size.height * (0.295 + s * 0.026),
+                                 body.size.width * 0.145, size.height * 0.009);
+        [[UIBezierPath bezierPathWithRoundedRect:slot cornerRadius:size.height * 0.0045] fill];
     }
     // The plate under the set.
     CGRect plate = CGRectMake(size.width * 0.22, CGRectGetMaxY(body) + size.height * 0.03, size.width * 0.56, size.height * 0.038);
@@ -914,25 +1441,50 @@ static void drawMatrix(SGWCtx *c) {
     fillRect(CGRectMake(0, 0, size.width, size.height), UIColor.blackColor);
     seedRand(c->title);
     NSString *glyphs = @"ﾊﾐﾋｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽﾀﾇﾎ0123456789";
-    UIFont *rainFont = monoFont(size.height * 0.016, UIFontWeightRegular);
-    CGFloat column = size.width * 0.052;
-    for (CGFloat x = size.width * 0.02; x < size.width; x += column) {
+    UIFont *rainFont = monoFont(size.height * 0.017, UIFontWeightRegular);
+    // Denser rain (Batch 97): half the old column width, glyphs nearly
+    // touching, and the brightness ramp the films use — the head glyph
+    // at the foot of each column is near-white hot and the trail decays
+    // behind it, instead of a flat ramp that read as green wallpaper.
+    CGFloat column = size.width * 0.030;
+    CGContextRef rainCtx = UIGraphicsGetCurrentContext();
+    for (CGFloat x = size.width * 0.015; x < size.width; x += column) {
         CGFloat startY = -nextRand() * size.height * 0.5;
         if (sg_frameTime >= 0) {
             // The rain falls while a clip renders: each column at its own pace.
             CGFloat fall = sg_frameTime * size.height * (0.07 + nextRand() * 0.11);
             startY += fmod(fall, size.height * 1.2);
         }
-        NSInteger length = 6 + (NSInteger)(nextRand() * 16);
+        NSInteger length = 8 + (NSInteger)(nextRand() * 15);
         for (NSInteger i = 0; i < length; i++) {
             unichar ch = [glyphs characterAtIndex:(NSUInteger)(nextRand() * glyphs.length) % glyphs.length];
             NSString *glyph = [NSString stringWithCharacters:&ch length:1];
-            CGFloat alpha = i == length - 1 ? 0.75 : 0.10 + 0.30 * (i / (CGFloat)length);
-            drawText(glyph, CGRectMake(x, startY + i * size.height * 0.021, column, size.height * 0.021),
-                     rainFont, [UIColor colorWithRed:0.1 green:1 blue:0.35 alpha:alpha], NSTextAlignmentLeft);
+            CGRect cell = CGRectMake(x, startY + i * size.height * 0.019, column, size.height * 0.019);
+            if (i == length - 1) {
+                // The head, twice: once bloomed, once hot.
+                CGContextSaveGState(rainCtx);
+                CGContextSetShadowWithColor(rainCtx, CGSizeZero, size.height * 0.006,
+                                            [UIColor colorWithRed:0.2 green:1 blue:0.4 alpha:0.9].CGColor);
+                drawText(glyph, cell, rainFont, [UIColor colorWithRed:0.80 green:1 blue:0.86 alpha:0.95],
+                         NSTextAlignmentLeft);
+                CGContextRestoreGState(rainCtx);
+                drawText(glyph, cell, rainFont, [UIColor colorWithRed:0.80 green:1 blue:0.86 alpha:0.95],
+                         NSTextAlignmentLeft);
+            } else {
+                CGFloat alpha = MAX(0.05, 0.80 * pow(0.84, length - 1 - i));
+                drawText(glyph, cell, rainFont, [UIColor colorWithRed:0.1 green:1 blue:0.35 alpha:alpha],
+                         NSTextAlignmentLeft);
+            }
         }
     }
-    fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithWhite:0 alpha:0.30]);
+    fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithWhite:0 alpha:0.18]);
+    // The terminal sits on its own dark panel so the rain stays bright
+    // around it instead of being washed flat.
+    UIBezierPath *panel = [UIBezierPath bezierPathWithRoundedRect:
+        CGRectMake(size.width * 0.04, size.height * 0.075, size.width * 0.92, size.height * 0.60)
+                                                     cornerRadius:size.height * 0.012];
+    [[UIColor colorWithWhite:0 alpha:0.55] setFill];
+    [panel fill];
     CGFloat margin = size.width * 0.07, width = size.width - 2 * margin;
     CGFloat y = size.height * 0.10;
     UIColor *green = [UIColor colorWithRed:0.25 green:1 blue:0.45 alpha:1];
@@ -1000,12 +1552,16 @@ static void drawStickers(SGWCtx *c) {
         CGFloat widthOfRow = 0;
         for (NSArray *item in aRow) widthOfRow += [item[1] doubleValue] + gap;
         widthOfRow -= gap;
-        CGFloat x = (size.width - widthOfRow) / 2;
+        // Collected, not gridded (Batch 97): the row starts a little off
+        // centre, and the rows lean into each other.
+        CGFloat x = (size.width - widthOfRow) / 2 + (nextRand() - 0.5) * size.width * 0.06;
         for (NSArray *item in aRow) {
             CGFloat w = [item[1] doubleValue];
             CGContextSaveGState(ctx);
             CGContextTranslateCTM(ctx, x + w / 2, y + rowHeight / 2);
-            CGContextRotateCTM(ctx, (nextRand() - 0.5) * 0.13);
+            CGContextRotateCTM(ctx, (nextRand() - 0.5) * 0.24);
+            CGFloat sizeJitter = 0.88 + nextRand() * 0.27;
+            CGContextScaleCTM(ctx, sizeJitter, sizeJitter);
             if (sg_frameTime >= 0) {
                 // The labels pop in one by one while a clip renders, with a
                 // little overshoot as each lands (an ease-out-back).
@@ -1014,15 +1570,33 @@ static void drawStickers(SGWCtx *c) {
                 CGFloat scale = local <= 0 ? 0.001 : (CGFloat)back;
                 CGContextScaleCTM(ctx, scale, scale);
             }
+            // A die-cut sticker, not a label: a white halo following the
+            // shape, lifted off the surface by its shadow, and every
+            // sixth sticker loud in the accent.
+            BOOL loud = (labelAt % 6 == 4);
+            CGRect labelRect = CGRectMake(-w / 2, -rowHeight / 2, w, rowHeight);
+            CGContextSetShadowWithColor(ctx, CGSizeMake(0, size.height * 0.004), size.height * 0.006,
+                                        [UIColor colorWithWhite:0 alpha:0.35].CGColor);
+            UIBezierPath *halo = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(labelRect, -5, -5)
+                                                            cornerRadius:rowHeight * 0.30];
+            [UIColor.whiteColor setFill];
+            [halo fill];
+            CGContextSetShadowWithColor(ctx, CGSizeZero, 0, NULL);
+            UIColor *face = loud ? (c->accent ?: [UIColor colorWithRed:0.9 green:0.3 blue:0.25 alpha:1])
+                                 : (blackLabel ? [UIColor colorWithWhite:0.05 alpha:1] : UIColor.whiteColor);
+            UIBezierPath *facePath = [UIBezierPath bezierPathWithRoundedRect:labelRect
+                                                                cornerRadius:rowHeight * 0.22];
+            [face setFill];
+            [facePath fill];
             labelAt++;
-            fillRect(CGRectMake(-w / 2, -rowHeight / 2, w, rowHeight), blackLabel ? [UIColor colorWithWhite:0.05 alpha:1] : UIColor.whiteColor);
             drawText(item[0], CGRectMake(-w / 2, -rowHeight / 2 + padY * 0.7, w, rowHeight), font,
-                     blackLabel ? UIColor.whiteColor : [UIColor colorWithWhite:0.05 alpha:1], NSTextAlignmentCenter);
+                     (loud || blackLabel) ? UIColor.whiteColor : [UIColor colorWithWhite:0.05 alpha:1],
+                     NSTextAlignmentCenter);
             CGContextRestoreGState(ctx);
             blackLabel = !blackLabel;
             x += w + gap;
         }
-        y += rowHeight + gap;
+        y += rowHeight * 0.88 + gap * 0.5;
     }
 }
 
@@ -1036,17 +1610,44 @@ static void drawReceipt(SGWCtx *c) {
         fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithWhite:0 alpha:0.55]);
     }
     CGFloat paperW = size.width * 0.76;
-    CGRect paper = CGRectMake((size.width - paperW) / 2, size.height * 0.09, paperW, size.height * 0.68);
-    fillRect(paper, [UIColor colorWithRed:0.96 green:0.945 blue:0.91 alpha:1]);
+    CGRect paper = CGRectMake((size.width - paperW) / 2, size.height * 0.06, paperW, size.height * 0.80);
+    // The slip as a path with a torn bottom edge, lifted off the ground
+    // by its shadow (Batch 97: it used to be a straight-cut rectangle
+    // floating on the void).
+    UIBezierPath *slip = [UIBezierPath bezierPath];
+    [slip moveToPoint:paper.origin];
+    [slip addLineToPoint:CGPointMake(CGRectGetMaxX(paper), paper.origin.y)];
+    [slip addLineToPoint:CGPointMake(CGRectGetMaxX(paper), CGRectGetMaxY(paper) - size.height * 0.008)];
+    CGFloat tooth = size.width * 0.011;
+    for (CGFloat tx = CGRectGetMaxX(paper) - tooth; tx > paper.origin.x; tx -= tooth) {
+        [slip addLineToPoint:CGPointMake(tx + tooth / 2, CGRectGetMaxY(paper))];
+        [slip addLineToPoint:CGPointMake(MAX(tx, paper.origin.x), CGRectGetMaxY(paper) - size.height * 0.008)];
+    }
+    [slip closePath];
+    CGContextRef slipCtx = UIGraphicsGetCurrentContext();
+    CGContextSaveGState(slipCtx);
+    CGContextSetShadowWithColor(slipCtx, CGSizeMake(0, size.height * 0.006), size.height * 0.012,
+                                [UIColor colorWithWhite:0 alpha:0.40].CGColor);
+    [[UIColor colorWithRed:0.96 green:0.945 blue:0.91 alpha:1] setFill];
+    [slip fill];
+    CGContextRestoreGState(slipCtx);
     CGFloat inner = paperW * 0.86, ix = paper.origin.x + paperW * 0.07;
-    CGFloat y = paper.origin.y + size.height * 0.03;
+    CGFloat y = paper.origin.y + size.height * 0.026;
     UIColor *ink = [UIColor colorWithWhite:0.08 alpha:1], *grey = [UIColor colorWithWhite:0.45 alpha:1];
     drawText(c->title.uppercaseString, CGRectMake(ix, y, inner, size.height * 0.03),
              monoFont(size.height * 0.021, UIFontWeightBold), ink, NSTextAlignmentCenter);
     y += size.height * 0.032;
     drawText(c->artist.uppercaseString, CGRectMake(ix, y, inner, size.height * 0.025),
              monoFont(size.height * 0.018, UIFontWeightRegular), ink, NSTextAlignmentCenter);
-    y += size.height * 0.045;
+    y += size.height * 0.030;
+    // The shop's small print, the way a real slip opens.
+    UIFont *smallMono = monoFont(size.height * 0.0135, UIFontWeightRegular);
+    drawText(@"12 CHORUS LANE · SIDE B", CGRectMake(ix, y, inner, size.height * 0.02),
+             smallMono, grey, NSTextAlignmentCenter);
+    y += size.height * 0.020;
+    drawText(@"TEL 555-0142 · CASHIER: MUSE", CGRectMake(ix, y, inner, size.height * 0.02),
+             smallMono, grey, NSTextAlignmentCenter);
+    y += size.height * 0.032;
     CGContextRef ctx = UIGraphicsGetCurrentContext();
     void (^dashed)(CGFloat yy) = ^(CGFloat yy) {
         CGContextSaveGState(ctx);
@@ -1068,25 +1669,54 @@ static void drawReceipt(SGWCtx *c) {
     };
     for (int i = 0; i < 3; i++) {
         if (!items[i].text.length) continue;
-        NSString *row = [NSString stringWithFormat:@"%@  %@", fmtClock(items[i].start), items[i].text.uppercaseString];
-        CGFloat h = textHeight(row, items[i].font, inner);
-        drawText(row, CGRectMake(ix, y, inner, h + 4), items[i].font, items[i].color, NSTextAlignmentLeft);
+        // The receipt's signature row: the item at the left, its time at
+        // the right, a dotted leader joining them (Batch 97).
+        NSString *text = items[i].text.uppercaseString;
+        NSString *clock = fmtClock(items[i].start);
+        UIFont *font = items[i].font;
+        CGFloat clockW = [clock sizeWithAttributes:@{NSFontAttributeName: font}].width;
+        CGFloat textW = inner - clockW - size.width * 0.05;
+        CGFloat h = textHeight(text, font, textW);
+        drawText(text, CGRectMake(ix, y, textW, h + 4), font, items[i].color, NSTextAlignmentLeft);
+        drawText(clock, CGRectMake(ix, y, inner, size.height * 0.024), font, items[i].color,
+                 NSTextAlignmentRight);
+        CGFloat lineW = MIN([text sizeWithAttributes:@{NSFontAttributeName: font}].width, textW);
+        CGFloat dotSize = size.height * 0.016;
+        drawText(@"· · · · · · · · · · · · · · · · · · · ·",
+                 CGRectMake(ix + lineW + size.width * 0.012, y, MAX(0, inner - clockW - lineW - size.width * 0.026), dotSize + 4),
+                 font, grey, NSTextAlignmentLeft);
         y += h + size.height * 0.018;
     }
     y += size.height * 0.01;
     dashed(y);
-    y += size.height * 0.02;
+    y += size.height * 0.016;
+    // Every receipt has a TOTAL: here, the whole song.
+    UIFont *totalFont = monoFont(size.height * 0.019, UIFontWeightBold);
+    drawText(@"TOTAL", CGRectMake(ix, y, inner, size.height * 0.026), totalFont, ink, NSTextAlignmentLeft);
+    drawText(fmtClock((NSInteger)(c->duration * 1000)), CGRectMake(ix, y, inner, size.height * 0.026),
+             totalFont, ink, NSTextAlignmentRight);
+    y += size.height * 0.034;
+    dashed(y);
+    y += size.height * 0.016;
     drawText([NSString stringWithFormat:@"#%ld OF %ld", (long)(c->index + 1), (long)MAX(c->count, c->index + 1)],
              CGRectMake(ix, y, inner, size.height * 0.025), monoFont(size.height * 0.017, UIFontWeightRegular), ink, NSTextAlignmentCenter);
-    // The barcode: seeded bars along the foot of the slip.
+    // The barcode: seeded bars at the foot, its digits printed under it,
+    // and the thank-you every till prints above it.
     seedRand(c->title);
+    NSMutableString *digits = [NSMutableString string];
+    for (int d = 0; d < 12; d++) [digits appendFormat:@"%ld", (long)(nextRand() * 10)];
+    seedRand(c->title);
+    CGFloat barcodeY = paper.origin.y + paper.size.height - size.height * 0.115;
+    drawText(@"THANK YOU", CGRectMake(ix, barcodeY - size.height * 0.030, inner, size.height * 0.022),
+             monoFont(size.height * 0.016, UIFontWeightBold), ink, NSTextAlignmentCenter);
     CGFloat bx = ix + inner * 0.08;
-    CGFloat barcodeY = paper.origin.y + paper.size.height - size.height * 0.075;
     while (bx < ix + inner * 0.9) {
         CGFloat bw = 1.5 + nextRand() * 4.5;
         if (nextRand() > 0.35) fillRect(CGRectMake(bx, barcodeY, bw, size.height * 0.045), ink);
         bx += bw + 1.5 + nextRand() * 3;
     }
+    drawText(digits, CGRectMake(ix, barcodeY + size.height * 0.050, inner, size.height * 0.02),
+             monoFont(size.height * 0.013, UIFontWeightRegular), ink, NSTextAlignmentCenter);
     if (sg_frameTime >= 0 && sg_frameTime < 1.5) {
         // Still printing: below the frontier there is only the black the
         // slip sits on, so the page reads as paper arriving line by line.
@@ -1100,18 +1730,51 @@ static void drawReceipt(SGWCtx *c) {
 // stacked in capitals, black and white taking turns.
 static void drawGigPoster(SGWCtx *c) {
     CGSize size = c->size;
-    fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithRed:0.87 green:0.86 blue:0.83 alpha:1]);
+    // Black paper, two inks (Batch 97): the old poster alternated black
+    // and white words on cream, so every other word vanished into the
+    // paper. On black, white and the accent read at full strength — and
+    // the billing furniture a gig poster actually has is all here: the
+    // artist as headliner, a rule, the lyric as the show, the song as
+    // the support act, and venue / date / doors along the foot.
+    fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithWhite:0.04 alpha:1]);
+    UIColor *accent = c->accent ?: [UIColor colorWithRed:0.95 green:0.25 blue:0.20 alpha:1];
+    UIColor *paper = [UIColor colorWithWhite:0.96 alpha:1];
+    CGFloat margin = size.width * 0.07, width = size.width * 0.86;
+    NSArray<NSString *> *billing = [c->artist.uppercaseString
+        componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    billing = [billing filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"length > 0"]];
+    if (!billing.count) billing = @[c->artist.uppercaseString ?: @"♪"];
     NSArray<NSString *> *words = [c->current.uppercaseString
         componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     words = [words filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"length > 0"]];
     if (!words.count) words = @[@"♪"];
-    CGFloat fontSize = stackedFontSize(words, size, 0.86);
-    UIFont *font = [UIFont boldSystemFontOfSize:fontSize];
-    CGFloat y = size.height * 0.06;
-    BOOL black = YES;
+    CGFloat lyricSize = stackedFontSize(words, size, 0.86);
+    CGFloat billingSize = lyricSize * 0.52;
+    // Fit the whole stack above the footer before drawing any of it.
+    CGFloat stackH = billing.count * billingSize * 0.94 + size.height * 0.055
+                   + words.count * lyricSize * 0.94;
+    while (stackH > size.height * 0.74 && lyricSize > size.height * 0.05) {
+        lyricSize *= 0.92;
+        billingSize = lyricSize * 0.52;
+        stackH = billing.count * billingSize * 0.94 + size.height * 0.055
+               + words.count * lyricSize * 0.94;
+    }
+    CGFloat y = size.height * 0.055;
+    UIFont *billingFont = [UIFont boldSystemFontOfSize:billingSize];
+    for (NSString *word in billing) {
+        drawText(word, CGRectMake(margin, y, width, billingSize * 1.2), billingFont, accent,
+                 NSTextAlignmentLeft);
+        y += billingSize * 0.94;
+    }
+    y += size.height * 0.018;
+    fillRect(CGRectMake(margin, y, width, MAX(2, size.height * 0.004)), paper);
+    y += size.height * 0.030;
+    UIFont *font = [UIFont boldSystemFontOfSize:lyricSize];
+    BOOL white = YES;
     NSInteger wordAt = 0;
     for (NSString *word in words) {
-        CGRect wordRect = CGRectMake(size.width * 0.07, y, size.width * 0.86, fontSize * 1.2);
+        CGRect wordRect = CGRectMake(margin, y, width, lyricSize * 1.2);
+        UIColor *inkColor = white ? paper : accent;
         if (sg_frameTime >= 0) {
             // Each word stamps down in turn, a touch large, then settles.
             double k = MIN(1, MAX(0, (sg_frameTime - wordAt * 0.07) / 0.25));
@@ -1122,79 +1785,171 @@ static void drawGigPoster(SGWCtx *c) {
             CGFloat scale = 1 + 0.13 * (1 - (CGFloat)e);
             CGContextScaleCTM(ctx, scale, scale);
             CGContextTranslateCTM(ctx, -CGRectGetMidX(wordRect), -CGRectGetMidY(wordRect));
-            drawText(word, wordRect, font,
-                     black ? [UIColor colorWithWhite:0.05 alpha:1] : UIColor.whiteColor, NSTextAlignmentLeft);
+            drawText(word, wordRect, font, inkColor, NSTextAlignmentLeft);
             CGContextRestoreGState(ctx);
         } else {
-            drawText(word, wordRect, font,
-                     black ? [UIColor colorWithWhite:0.05 alpha:1] : UIColor.whiteColor, NSTextAlignmentLeft);
+            drawText(word, wordRect, font, inkColor, NSTextAlignmentLeft);
         }
-        y += fontSize * 0.94;
-        black = !black;
+        y += lyricSize * 0.94;
+        white = !white;
         wordAt++;
     }
-    NSString *credit = [NSString stringWithFormat:@"%@ — %@", c->title.uppercaseString, c->artist.uppercaseString];
-    drawText(credit, CGRectMake(size.width * 0.07, MIN(y + size.height * 0.03, size.height * 0.9), size.width * 0.86, size.height * 0.025),
-             [UIFont systemFontOfSize:size.height * 0.016 weight:UIFontWeightMedium],
-             [UIColor colorWithWhite:0.25 alpha:1], NSTextAlignmentLeft);
+    if (c->title.length) {
+        y += size.height * 0.016;
+        drawText([NSString stringWithFormat:@"PLUS: %@", c->title.uppercaseString],
+                 CGRectMake(margin, y, width, size.height * 0.025),
+                 [UIFont systemFontOfSize:size.height * 0.016 weight:UIFontWeightMedium],
+                 [UIColor colorWithWhite:0.55 alpha:1], NSTextAlignmentLeft);
+    }
+    // The footer every gig poster has: venue, date, doors — between rules.
+    CGFloat fy = size.height * 0.885;
+    fillRect(CGRectMake(margin, fy, width, MAX(2, size.height * 0.003)), paper);
+    NSDateFormatter *day = [NSDateFormatter new];
+    day.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    day.dateFormat = @"EEE d MMM yyyy";
+    NSString *date = [day stringFromDate:NSDate.date].uppercaseString;
+    UIFont *footFont = monoFont(size.height * 0.0155, UIFontWeightMedium);
+    CGRect footRow = CGRectMake(margin, fy + size.height * 0.012, width, size.height * 0.022);
+    drawText(@"AT THE WORKSHOP HALL", footRow, footFont, paper, NSTextAlignmentLeft);
+    drawText(date, footRow, footFont, paper, NSTextAlignmentCenter);
+    drawText(@"DOORS 8PM · £5 OTD", footRow, footFont, paper, NSTextAlignmentRight);
+    fillRect(CGRectMake(margin, fy + size.height * 0.042, width, MAX(2, size.height * 0.003)), paper);
+    // Photocopy roughness: two soft multiply passes and a few scratches.
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGContextSaveGState(ctx);
+    CGContextSetBlendMode(ctx, kCGBlendModeMultiply);
+    fillRect(CGRectMake(0, 0, size.width * 0.55, size.height), [UIColor colorWithWhite:0.94 alpha:1]);
+    fillRect(CGRectMake(size.width * 0.6, 0, size.width * 0.4, size.height),
+             [UIColor colorWithWhite:0.97 alpha:1]);
+    CGContextRestoreGState(ctx);
+    seedRand(c->title);
+    [[UIColor colorWithWhite:1 alpha:0.05] setFill];
+    for (int i = 0; i < 3; i++) {
+        CGFloat sx = nextRand() * size.width;
+        UIRectFill(CGRectMake(sx, nextRand() * size.height * 0.4, 1.5,
+                              size.height * (0.1 + nextRand() * 0.2)));
+    }
 }
 
 // Holo: the song as a holographic trading card — frosted panel, picture
 // window, the line with a glitch edge.
 static void drawHolo(SGWCtx *c) {
     CGSize size = c->size;
-    fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithWhite:0.85 alpha:1]);
+    // The room first: a dim wash of the cover, dark enough that the
+    // card's foil is the brightest thing in it (Batch 97: the old card
+    // was a flat white panel with nothing holographic about it — the
+    // foil is the entire point of the style, so now it leads).
+    fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithWhite:0.13 alpha:1]);
     if (c->cover) {
         UIImage *soft = blurred(c->cover, MAX(24, size.width * 0.08));
         if (soft) drawCoverFilled(soft, size);
-        fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithWhite:1 alpha:0.45]);
+        fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithWhite:0 alpha:0.45]);
     }
-    CGRect card = CGRectMake(size.width * 0.07, size.height * 0.07, size.width * 0.86, size.height * 0.78);
-    UIBezierPath *cardPath = [UIBezierPath bezierPathWithRoundedRect:card cornerRadius:size.height * 0.022];
-    [[UIColor colorWithWhite:1 alpha:0.85] setFill];
+    // A real card's proportions (63 × 88 mm), centred, lifted off the
+    // ground on its own shadow.
+    CGFloat cardW = size.width * 0.80;
+    CGFloat cardH = cardW / 0.716;
+    CGRect card = CGRectMake((size.width - cardW) / 2, (size.height - cardH) / 2, cardW, cardH);
+    UIBezierPath *cardPath = [UIBezierPath bezierPathWithRoundedRect:card cornerRadius:cardW * 0.045];
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGContextSaveGState(ctx);
+    CGContextSetShadowWithColor(ctx, CGSizeMake(0, size.height * 0.012), size.height * 0.022,
+                                [UIColor colorWithWhite:0 alpha:0.45].CGColor);
+    [[UIColor colorWithWhite:0.97 alpha:1] setFill];
     [cardPath fill];
-    [[UIColor colorWithWhite:1 alpha:0.9] setStroke];
-    cardPath.lineWidth = 1.5;
-    [cardPath stroke];
-    CGFloat ix = card.origin.x + size.width * 0.05, iw = card.size.width - size.width * 0.10;
-    CGFloat y = card.origin.y + size.height * 0.025;
+    CGContextRestoreGState(ctx);
+    // The foil: a rainbow wash over the whole card, and a brighter band
+    // where the light catches — it travels while a clip plays.
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    NSArray *rainbow = @[(id)[UIColor colorWithRed:1 green:0.35 blue:0.45 alpha:1].CGColor,
+                         (id)[UIColor colorWithRed:1 green:0.75 blue:0.30 alpha:1].CGColor,
+                         (id)[UIColor colorWithRed:0.98 green:0.95 blue:0.35 alpha:1].CGColor,
+                         (id)[UIColor colorWithRed:0.40 green:0.95 blue:0.50 alpha:1].CGColor,
+                         (id)[UIColor colorWithRed:0.35 green:0.70 blue:1 alpha:1].CGColor,
+                         (id)[UIColor colorWithRed:0.70 green:0.45 blue:1 alpha:1].CGColor];
+    CGGradientRef foil = CGGradientCreateWithColors(space, (__bridge CFArrayRef)rainbow, NULL);
+    CGContextSaveGState(ctx);
+    [cardPath addClip];
+    CGContextSaveGState(ctx);
+    CGContextSetBlendMode(ctx, kCGBlendModeOverlay);
+    CGContextSetAlpha(ctx, 0.35);
+    CGContextDrawLinearGradient(ctx, foil, CGPointMake(card.origin.x, card.origin.y),
+                                CGPointMake(CGRectGetMaxX(card), CGRectGetMaxY(card)), 0);
+    CGContextRestoreGState(ctx);
+    double sweepT = sg_frameTime >= 0 ? (0.5 + 0.5 * sin(sg_frameTime * 1.4)) : 0.30;
+    CGFloat bandX = card.origin.x - cardW * 0.4 + (CGFloat)sweepT * cardW * 1.8;
+    CGContextSaveGState(ctx);
+    CGContextTranslateCTM(ctx, bandX, card.origin.y - cardH * 0.3);
+    CGContextRotateCTM(ctx, 0.35);
+    fillRect(CGRectMake(0, 0, cardW * 0.22, cardH * 1.8), [UIColor colorWithWhite:1 alpha:0.20]);
+    CGContextRestoreGState(ctx);
+    CGContextRestoreGState(ctx);
+    // A thin inner border, the way the foil layer sits framed on the card.
+    UIBezierPath *inner = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(card, cardW * 0.018, cardW * 0.018)
+                                                     cornerRadius:cardW * 0.038];
+    [[UIColor colorWithWhite:0 alpha:0.15] setStroke];
+    inner.lineWidth = 1;
+    [inner stroke];
+    CGFloat ix = card.origin.x + cardW * 0.065, iw = cardW * 0.87;
+    CGFloat y = card.origin.y + cardH * 0.028;
     UIColor *ink = [UIColor colorWithWhite:0.10 alpha:1];
-    drawText(c->title, CGRectMake(ix, y, iw * 0.75, size.height * 0.03),
-             [UIFont boldSystemFontOfSize:size.height * 0.024], ink, NSTextAlignmentLeft);
-    drawText([NSString stringWithFormat:@"%ld", (long)(c->duration > 0 ? c->duration : 380)],
-             CGRectMake(ix, y, iw, size.height * 0.03), [UIFont boldSystemFontOfSize:size.height * 0.024],
-             [UIColor colorWithRed:0.85 green:0.15 blue:0.15 alpha:1], NSTextAlignmentRight);
-    y += size.height * 0.045;
-    CGRect window = CGRectMake(ix, y, iw, size.height * 0.30);
+    // Name left, hit points right — labelled, and in ink.
+    drawText(c->title, CGRectMake(ix, y, iw * 0.72, cardH * 0.035),
+             [UIFont boldSystemFontOfSize:cardH * 0.026], ink, NSTextAlignmentLeft);
+    NSString *hp = [NSString stringWithFormat:@"HP %ld", (long)(c->duration > 0 ? c->duration : 380)];
+    drawText(hp, CGRectMake(ix, y, iw, cardH * 0.035),
+             [UIFont boldSystemFontOfSize:cardH * 0.026], ink, NSTextAlignmentRight);
+    y += cardH * 0.048;
+    // The picture window, where the foil lives strongest.
+    CGRect window = CGRectMake(ix, y, iw, cardH * 0.34);
     if (c->cover) {
-        CGContextSaveGState(UIGraphicsGetCurrentContext());
-        [[UIBezierPath bezierPathWithRoundedRect:window cornerRadius:8] addClip];
+        CGContextSaveGState(ctx);
+        [[UIBezierPath bezierPathWithRoundedRect:window cornerRadius:6] addClip];
         drawCoverInRect(c->cover, window);
-        CGContextRestoreGState(UIGraphicsGetCurrentContext());
+        CGContextSaveGState(ctx);
+        CGContextSetBlendMode(ctx, kCGBlendModeOverlay);
+        CGContextSetAlpha(ctx, 0.30);
+        CGContextDrawLinearGradient(ctx, foil, CGPointMake(window.origin.x, window.origin.y),
+                                    CGPointMake(CGRectGetMaxX(window), CGRectGetMaxY(window)), 0);
+        CGContextRestoreGState(ctx);
+        CGContextRestoreGState(ctx);
     }
-    y += size.height * 0.315;
+    CGGradientRelease(foil);
+    CGColorSpaceRelease(space);
+    y += cardH * 0.355;
     drawText([NSString stringWithFormat:@"%@ · %@", c->artist, c->title],
-             CGRectMake(ix, y, iw, size.height * 0.02), [UIFont systemFontOfSize:size.height * 0.014],
+             CGRectMake(ix, y, iw * 0.85, cardH * 0.025), [UIFont systemFontOfSize:cardH * 0.0145],
              [UIColor colorWithWhite:0.35 alpha:1], NSTextAlignmentLeft);
-    y += size.height * 0.032;
-    UIFont *lineFont = [UIFont boldSystemFontOfSize:size.height * 0.028];
-    CGFloat lineH = textHeight(c->current, lineFont, iw);
-    drawText(c->current, CGRectMake(ix - 1.5, y, iw, lineH + 4), lineFont, [UIColor colorWithRed:1 green:0.2 blue:0.3 alpha:0.45], NSTextAlignmentLeft);
-    drawText(c->current, CGRectMake(ix + 1.5, y, iw, lineH + 4), lineFont, [UIColor colorWithRed:0.2 green:0.6 blue:1 alpha:0.45], NSTextAlignmentLeft);
-    drawText(c->current, CGRectMake(ix, y, iw, lineH + 4), lineFont, ink, NSTextAlignmentLeft);
-    y += lineH + size.height * 0.008;
-    drawText(fmtClock(c->line.start), CGRectMake(ix, y, iw, size.height * 0.02),
-             monoFont(size.height * 0.014, UIFontWeightRegular), [UIColor colorWithWhite:0.45 alpha:1], NSTextAlignmentLeft);
-    y += size.height * 0.028;
+    drawText(@"★", CGRectMake(ix, y - cardH * 0.004, iw, cardH * 0.03),
+             [UIFont systemFontOfSize:cardH * 0.02], [UIColor colorWithRed:0.85 green:0.62 blue:0.10 alpha:1],
+             NSTextAlignmentRight);
+    y += cardH * 0.038;
+    // The text box: a defined panel at the card's foot holding the words,
+    // the way a card puts its attack text in a box.
+    CGRect box = CGRectMake(ix, y, iw, card.origin.y + cardH * 0.955 - y);
+    UIBezierPath *boxPath = [UIBezierPath bezierPathWithRoundedRect:box cornerRadius:6];
+    [[UIColor colorWithWhite:0 alpha:0.055] setFill];
+    [boxPath fill];
+    [[UIColor colorWithWhite:0 alpha:0.12] setStroke];
+    boxPath.lineWidth = 1;
+    [boxPath stroke];
+    CGFloat bx = box.origin.x + cardW * 0.035, bw = box.size.width - cardW * 0.07;
+    CGFloat by = box.origin.y + cardH * 0.018;
+    UIFont *lineFont = [UIFont boldSystemFontOfSize:cardH * 0.024];
+    CGFloat lineH = textHeight(c->current, lineFont, bw);
+    drawText(c->current, CGRectMake(bx, by, bw, lineH + 4), lineFont, ink, NSTextAlignmentLeft);
+    by += lineH + cardH * 0.010;
+    NSString *meta = [NSString stringWithFormat:@"%@  ·  up next: %@", fmtClock(c->line.start),
+                      c->next.length ? c->next : @"—"];
+    drawText(meta, CGRectMake(bx, by, bw, cardH * 0.022),
+             monoFont(cardH * 0.0135, UIFontWeightRegular), [UIColor colorWithWhite:0.45 alpha:1],
+             NSTextAlignmentLeft);
     if (c->line.translation.length) {
-        drawText(c->line.translation, CGRectMake(ix, y, iw, size.height * 0.035),
-                 serifFont(size.height * 0.017, UIFontWeightRegular, YES), [UIColor colorWithWhite:0.30 alpha:1], NSTextAlignmentLeft);
-        y += size.height * 0.035;
+        by += cardH * 0.026;
+        drawText(c->line.translation, CGRectMake(bx, by, bw, cardH * 0.03),
+                 serifFont(cardH * 0.015, UIFontWeightRegular, YES),
+                 [UIColor colorWithWhite:0.30 alpha:1], NSTextAlignmentLeft);
     }
-    fillRect(CGRectMake(ix, y, iw, 1), [UIColor colorWithWhite:0 alpha:0.12]);
-    y += size.height * 0.015;
-    drawText(c->next, CGRectMake(ix, y, iw, size.height * 0.03),
-             [UIFont systemFontOfSize:size.height * 0.017], [UIColor colorWithWhite:0.45 alpha:1], NSTextAlignmentLeft);
 }
 
 // RGB split: the line pulled apart into red and cyan copies over the cover
@@ -1206,18 +1961,46 @@ static void drawRGBSplit(SGWCtx *c) {
         UIImage *soft = blurred(c->cover, MAX(30, size.width * 0.11));
         if (soft) drawCoverFilled(soft, size);
         fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithWhite:0 alpha:0.30]);
+        // Glitch slices (Batch 97): thin bands of the cover torn sideways
+        // — the defect applied to the picture, not just the words.
+        if (c->cover.CGImage) {
+            seedRand([NSString stringWithFormat:@"%@%ld", c->title, (long)c->index]);
+            CGFloat px = CGImageGetWidth(c->cover.CGImage), py = CGImageGetHeight(c->cover.CGImage);
+            for (int s = 0; s < 3; s++) {
+                CGFloat fy = 0.12 + nextRand() * 0.65, fh = 0.018 + nextRand() * 0.035;
+                CGRect crop = CGRectMake(0, py * fy, px, py * fh);
+                CGImageRef slice = CGImageCreateWithImageInRect(c->cover.CGImage, crop);
+                if (!slice) continue;
+                UIImage *band = [UIImage imageWithCGImage:slice];
+                CGImageRelease(slice);
+                CGFloat shift = (nextRand() - 0.3) * size.width * 0.022;
+                [band drawInRect:CGRectMake(shift, size.height * fy, size.width, size.height * fh)];
+            }
+        }
     }
-    fillRect(CGRectMake(0, 0, size.width * 0.05, size.height), [UIColor colorWithRed:1 green:0.1 blue:0.8 alpha:0.20]);
-    fillRect(CGRectMake(size.width * 0.95, 0, size.width * 0.05, size.height), [UIColor colorWithRed:1 green:0.85 blue:0.1 alpha:0.16]);
-    NSString *shout = c->current.uppercaseString;
-    UIFont *font = monoFont(size.height * 0.034, UIFontWeightBold);
+    // VHS furniture: the recording dot and the timecode.
+    drawText(@"● REC", CGRectMake(size.width * 0.07, size.height * 0.045, size.width * 0.4, size.height * 0.025),
+             monoFont(size.height * 0.016, UIFontWeightBold), [UIColor colorWithRed:1 green:0.25 blue:0.25 alpha:1],
+             NSTextAlignmentLeft);
+    drawText(fmtClock(c->line.start), CGRectMake(size.width * 0.53, size.height * 0.045, size.width * 0.4, size.height * 0.025),
+             monoFont(size.height * 0.016, UIFontWeightRegular), [UIColor colorWithWhite:1 alpha:0.65],
+             NSTextAlignmentRight);
+    NSString *shout = c->current;
+    UIFont *font = [UIFont boldSystemFontOfSize:size.height * 0.036];
     CGFloat margin = size.width * 0.07, width = size.width - 2 * margin;
     CGFloat h = textHeight(shout, font, width);
     CGFloat y = size.height * 0.42;
     CGFloat off = size.width * 0.012 * (sg_frameTime >= 0 ? 0.6 + 0.6 * sin(sg_frameTime * 3.9) : 1);
+    // The fringe: red and cyan copies in Screen behind one whole white
+    // copy (Batch 97: the old middle copy was 55% white, which is not a
+    // thing chromatic aberration does — it softened the line into a glow).
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGContextSaveGState(ctx);
+    CGContextSetBlendMode(ctx, kCGBlendModeScreen);
     drawText(shout, CGRectMake(margin - off, y, width, h + 4), font, [UIColor colorWithRed:1 green:0.15 blue:0.2 alpha:0.85], NSTextAlignmentLeft);
     drawText(shout, CGRectMake(margin + off, y, width, h + 4), font, [UIColor colorWithRed:0.1 green:0.9 blue:1 alpha:0.85], NSTextAlignmentLeft);
-    drawText(shout, CGRectMake(margin, y, width, h + 4), font, [UIColor colorWithWhite:1 alpha:0.55], NSTextAlignmentLeft);
+    CGContextRestoreGState(ctx);
+    drawText(shout, CGRectMake(margin, y, width, h + 4), font, UIColor.whiteColor, NSTextAlignmentLeft);
     drawText(c->next, CGRectMake(margin, y + h + size.height * 0.025, width, size.height * 0.04),
              [UIFont systemFontOfSize:size.height * 0.020], [UIColor colorWithWhite:1 alpha:0.55], NSTextAlignmentLeft);
 }
@@ -1227,7 +2010,7 @@ static void drawRGBSplit(SGWCtx *c) {
 static void drawWindow(SGWCtx *c) {
     CGSize size = c->size;
     fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithRed:0.955 green:0.937 blue:0.885 alpha:1]);
-    CGRect frame = CGRectMake(size.width * 0.235, size.height * 0.06, size.width * 0.53, size.height * 0.47);
+    CGRect frame = CGRectMake(size.width * 0.215, size.height * 0.075, size.width * 0.57, size.height * 0.50);
     CGFloat radius = frame.size.width / 2;
     UIBezierPath *arch = [UIBezierPath new];
     [arch moveToPoint:CGPointMake(frame.origin.x, CGRectGetMaxY(frame))];
@@ -1236,6 +2019,25 @@ static void drawWindow(SGWCtx *c) {
                 startAngle:M_PI endAngle:0 clockwise:YES];
     [arch addLineToPoint:CGPointMake(CGRectGetMaxX(frame), CGRectGetMaxY(frame))];
     [arch closePath];
+    // The mat the piece is mounted on, and the shadow it casts on the
+    // wall (Batch 97: a bare 2pt outline read as a diagram).
+    CGFloat exp = size.width * 0.016;
+    CGRect matRect = CGRectInset(frame, -exp, -exp);
+    CGFloat matRadius = matRect.size.width / 2;
+    UIBezierPath *mat = [UIBezierPath new];
+    [mat moveToPoint:CGPointMake(matRect.origin.x, CGRectGetMaxY(matRect))];
+    [mat addLineToPoint:CGPointMake(matRect.origin.x, matRect.origin.y + matRadius)];
+    [mat addArcWithCenter:CGPointMake(CGRectGetMidX(matRect), matRect.origin.y + matRadius) radius:matRadius
+               startAngle:M_PI endAngle:0 clockwise:YES];
+    [mat addLineToPoint:CGPointMake(CGRectGetMaxX(matRect), CGRectGetMaxY(matRect))];
+    [mat closePath];
+    CGContextRef matCtx = UIGraphicsGetCurrentContext();
+    CGContextSaveGState(matCtx);
+    CGContextSetShadowWithColor(matCtx, CGSizeMake(0, size.height * 0.007), size.height * 0.012,
+                                [UIColor colorWithWhite:0 alpha:0.18].CGColor);
+    [[UIColor colorWithRed:0.90 green:0.885 blue:0.845 alpha:1] setFill];
+    [mat fill];
+    CGContextRestoreGState(matCtx);
     if (c->cover) {
         CGContextSaveGState(UIGraphicsGetCurrentContext());
         [arch addClip];
@@ -1245,6 +2047,17 @@ static void drawWindow(SGWCtx *c) {
     [[UIColor colorWithWhite:0.15 alpha:1] setStroke];
     arch.lineWidth = 2;
     [arch stroke];
+    // The little wall label beside the piece, the way galleries label.
+    CGFloat labelX = CGRectGetMaxX(frame) + size.width * 0.032;
+    CGFloat labelY = CGRectGetMidY(frame) - size.height * 0.030;
+    UIFont *labelFont = [UIFont systemFontOfSize:size.height * 0.0115];
+    UIColor *labelInk = [UIColor colorWithWhite:0.40 alpha:1];
+    drawText(c->title, CGRectMake(labelX, labelY, size.width * 0.15, size.height * 0.018),
+             [UIFont boldSystemFontOfSize:size.height * 0.0115], labelInk, NSTextAlignmentLeft);
+    drawText(c->artist, CGRectMake(labelX, labelY + size.height * 0.017, size.width * 0.15, size.height * 0.018),
+             labelFont, labelInk, NSTextAlignmentLeft);
+    drawText(@"2026", CGRectMake(labelX, labelY + size.height * 0.034, size.width * 0.15, size.height * 0.018),
+             labelFont, labelInk, NSTextAlignmentLeft);
     CGFloat y = CGRectGetMaxY(frame) + size.height * 0.045;
     UIFont *lineFont = serifFont(size.height * 0.032, UIFontWeightRegular, YES);
     drawText(c->current, CGRectMake(size.width * 0.08, y, size.width * 0.84, size.height * 0.10),
@@ -1272,11 +2085,16 @@ static void drawStarburst(SGWCtx *c) {
         if (soft) drawCoverFilled(soft, size);
         fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithWhite:0 alpha:0.35]);
     }
-    CGRect burst = CGRectMake(size.width * 0.19, size.height * 0.07, size.width * 0.62, size.width * 0.62);
+    // A real burst badge (Batch 97): spiky (inner 0.68, 24 points), one
+    // flat poster red with a white edge and a single hard shadow — the
+    // pink/blue offset doubles were vaporwave, not a price badge. The
+    // cover sits in a circle inside it, and the badge carries a word:
+    // the longest word of the line, in outlined caps, tilted.
+    CGRect burst = CGRectMake(size.width * 0.16, size.height * 0.06, size.width * 0.68, size.width * 0.68);
     CGPoint centre = CGPointMake(CGRectGetMidX(burst), CGRectGetMidY(burst));
-    CGFloat outer = burst.size.width / 2, inner = outer * 0.80;
+    CGFloat outer = burst.size.width / 2, inner = outer * 0.68;
     UIBezierPath *star = [UIBezierPath new];
-    NSInteger points = 18;
+    NSInteger points = 24;
     for (NSInteger i = 0; i < points * 2; i++) {
         CGFloat r = i % 2 == 0 ? outer : inner;
         CGFloat angle = -M_PI_2 + i * M_PI / points;
@@ -1287,28 +2105,68 @@ static void drawStarburst(SGWCtx *c) {
     [star closePath];
     CGContextRef ctx = UIGraphicsGetCurrentContext();
     CGContextSaveGState(ctx);
-    CGContextTranslateCTM(ctx, 9, 7);
-    [[UIColor colorWithRed:0.95 green:0.45 blue:0.75 alpha:1] setFill];
+    CGContextTranslateCTM(ctx, size.width * 0.008, size.height * 0.008);
+    [[UIColor colorWithWhite:0 alpha:0.35] setFill];
     [star fill];
     CGContextRestoreGState(ctx);
-    CGContextSaveGState(ctx);
-    CGContextTranslateCTM(ctx, 4.5, 3.5);
-    [[UIColor colorWithRed:0.40 green:0.70 blue:0.95 alpha:1] setFill];
+    [[UIColor colorWithRed:0.92 green:0.16 blue:0.13 alpha:1] setFill];
     [star fill];
-    CGContextRestoreGState(ctx);
+    [[UIColor whiteColor] setStroke];
+    star.lineWidth = MAX(2, size.width * 0.003);
+    [star stroke];
     if (c->cover) {
+        CGFloat discR = outer * 0.58;
+        CGRect disc = CGRectMake(centre.x - discR, centre.y - discR, discR * 2, discR * 2);
         CGContextSaveGState(ctx);
-        [star addClip];
-        drawCoverInRect(c->cover, burst);
+        [[UIBezierPath bezierPathWithOvalInRect:disc] addClip];
+        drawCoverInRect(c->cover, disc);
+        CGContextRestoreGState(ctx);
+        [[UIColor whiteColor] setStroke];
+        UIBezierPath *ring = [UIBezierPath bezierPathWithOvalInRect:disc];
+        ring.lineWidth = MAX(2, size.width * 0.003);
+        [ring stroke];
+    }
+    // The badge's word: the longest word of the line being sung.
+    NSString *badgeWord = @"";
+    for (NSString *word in [c->current componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]) {
+        if (word.length > badgeWord.length) badgeWord = word;
+    }
+    if (badgeWord.length) {
+        CGFloat fs = size.height * 0.034;
+        UIFont *badgeFont = [UIFont boldSystemFontOfSize:fs];
+        while (fs > size.height * 0.016 &&
+               [badgeWord.uppercaseString sizeWithAttributes:@{NSFontAttributeName: badgeFont}].width > burst.size.width * 0.72) {
+            fs *= 0.9;
+            badgeFont = [UIFont boldSystemFontOfSize:fs];
+        }
+        NSMutableAttributedString *badge = [[NSMutableAttributedString alloc]
+            initWithString:badgeWord.uppercaseString];
+        [badge addAttributes:@{NSFontAttributeName: badgeFont,
+                               NSForegroundColorAttributeName: UIColor.whiteColor,
+                               NSStrokeColorAttributeName: [UIColor colorWithWhite:0.05 alpha:1],
+                               NSStrokeWidthAttributeName: @(-5)}
+                        range:NSMakeRange(0, badge.length)];
+        NSMutableParagraphStyle *centred = [NSMutableParagraphStyle new];
+        centred.alignment = NSTextAlignmentCenter;
+        [badge addAttribute:NSParagraphStyleAttributeName value:centred range:NSMakeRange(0, badge.length)];
+        CGContextSaveGState(ctx);
+        CGContextTranslateCTM(ctx, centre.x, centre.y + outer * 0.60);
+        CGContextRotateCTM(ctx, -0.14);
+        [badge drawWithRect:CGRectMake(-burst.size.width * 0.45, -fs * 0.7, burst.size.width * 0.9, fs * 1.4)
+                    options:NSStringDrawingUsesLineFragmentOrigin context:nil];
         CGContextRestoreGState(ctx);
     }
-    CGFloat y = CGRectGetMaxY(burst) + size.height * 0.05;
+    CGFloat y = CGRectGetMaxY(burst) + size.height * 0.045;
     UIFont *nowFont = [UIFont boldSystemFontOfSize:size.height * 0.032];
     drawText(c->current, CGRectMake(size.width * 0.07, y, size.width * 0.86, size.height * 0.10),
              nowFont, UIColor.whiteColor, NSTextAlignmentCenter);
     y += textHeight(c->current, nowFont, size.width * 0.86) + size.height * 0.012;
     drawText(c->next, CGRectMake(size.width * 0.07, y, size.width * 0.86, size.height * 0.05),
              [UIFont systemFontOfSize:size.height * 0.021], [UIColor colorWithWhite:1 alpha:0.55], NSTextAlignmentCenter);
+    drawText([NSString stringWithFormat:@"%@ — %@", c->title ?: @"", c->artist ?: @""],
+             CGRectMake(size.width * 0.07, size.height * 0.93, size.width * 0.86, size.height * 0.03),
+             [UIFont systemFontOfSize:size.height * 0.016], [UIColor colorWithWhite:1 alpha:0.45],
+             NSTextAlignmentCenter);
 }
 
 // Print: newsprint — the cover as halftone dots dissolving into paper, a red
@@ -1322,8 +2180,8 @@ static UIImage *halftoneOf(UIImage *cover) {
     if (memo && memoFor == cover.CGImage) return memo;
     CIFilter *dots = [CIFilter filterWithName:@"CIDotScreen"];
     [dots setValue:[CIImage imageWithCGImage:cover.CGImage] forKey:kCIInputImageKey];
-    [dots setValue:@(6.0) forKey:@"inputWidth"];
-    [dots setValue:@(0.75) forKey:@"inputSharpness"];
+    [dots setValue:@(4.2) forKey:@"inputWidth"];
+    [dots setValue:@(0.6) forKey:@"inputSharpness"];
     UIImage *fresh = ciResult(cover, dots);
     // The key is retained (Batch 89): an unretained CGImageRef dangles the
     // moment its bitmap goes, and a new bitmap at the same address would
@@ -1337,10 +2195,25 @@ static UIImage *halftoneOf(UIImage *cover) {
 
 static void drawPrint(SGWCtx *c) {
     CGSize size = c->size;
-    fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithRed:0.80 green:0.78 blue:0.72 alpha:1]);
+    fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithRed:0.86 green:0.84 blue:0.78 alpha:1]);
+    // The front page's furniture (Batch 97): the artist as the masthead
+    // name at the left, the date at the right, a heavy rule under both —
+    // then the photograph below it.
+    UIFont *mastFont = serifFont(size.height * 0.017, UIFontWeightBold, NO);
+    UIColor *mastInk = [UIColor colorWithWhite:0.08 alpha:1];
+    drawText(c->artist.uppercaseString, CGRectMake(size.width * 0.06, size.height * 0.020, size.width * 0.55, size.height * 0.024),
+             mastFont, mastInk, NSTextAlignmentLeft);
+    NSDateFormatter *dayFmt = [NSDateFormatter new];
+    dayFmt.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    dayFmt.dateFormat = @"MMMM d, yyyy";
+    drawText([dayFmt stringFromDate:NSDate.date].uppercaseString,
+             CGRectMake(size.width * 0.39, size.height * 0.020, size.width * 0.55, size.height * 0.024),
+             mastFont, mastInk, NSTextAlignmentRight);
+    fillRect(CGRectMake(size.width * 0.06, size.height * 0.050, size.width * 0.88, MAX(2, size.height * 0.0028)),
+             mastInk);
     if (c->cover) {
         UIImage *halftone = halftoneOf(c->cover);
-        if (halftone) drawCoverInRect(halftone, breathingRect(CGRectMake(0, 0, size.width, size.height * 0.55), size.width * 0.015, size.width * 0.005));
+        if (halftone) drawCoverInRect(halftone, breathingRect(CGRectMake(0, size.height * 0.058, size.width, size.height * 0.49), size.width * 0.015, size.width * 0.005));
         // The dissolve: paper colour gathered from the middle down.
         UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
         format.scale = 1;
@@ -1349,18 +2222,18 @@ static void drawPrint(SGWCtx *c) {
             imageWithActions:^(UIGraphicsImageRendererContext *fadeContext) {
             CGContextRef ctx = fadeContext.CGContext;
             CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-            UIColor *paper = [UIColor colorWithRed:0.80 green:0.78 blue:0.72 alpha:1];
+            UIColor *paper = [UIColor colorWithRed:0.86 green:0.84 blue:0.78 alpha:1];
             CGFloat r, g, b;
             [paper getRed:&r green:&g blue:&b alpha:NULL];
             CGFloat components[] = {r, g, b, 0, r, g, b, 1};
             CGGradientRef gradient = CGGradientCreateWithColorComponents(space, components, NULL, 2);
-            CGContextDrawLinearGradient(ctx, gradient, CGPointMake(0, size.height * 0.28), CGPointMake(0, size.height * 0.62), 0);
+            CGContextDrawLinearGradient(ctx, gradient, CGPointMake(0, size.height * 0.30), CGPointMake(0, size.height * 0.55), 0);
             CGGradientRelease(gradient);
             CGColorSpaceRelease(space);
         }];
         [fade drawInRect:CGRectMake(0, 0, size.width, size.height)];
     }
-    CGRect tag = CGRectMake(size.width * 0.06, size.height * 0.035, 0, size.height * 0.034);
+    CGRect tag = CGRectMake(size.width * 0.06, size.height * 0.078, 0, size.height * 0.034);
     UIFont *tagFont = [UIFont boldSystemFontOfSize:size.height * 0.016];
     CGFloat tagWidth = [c->title.uppercaseString sizeWithAttributes:@{NSFontAttributeName: tagFont}].width + size.width * 0.03;
     tag.size.width = tagWidth;
@@ -1381,73 +2254,149 @@ static void drawPrint(SGWCtx *c) {
     }
     if (rowSoFar.length) [rowsText addObject:rowSoFar];
     CGFloat y = size.height * 0.60, rowH = size.height * 0.052;
+    seedRand([NSString stringWithFormat:@"%@%ld", c->title, (long)c->index]);
     for (NSString *rowText in rowsText) {
-        CGFloat w = [rowText sizeWithAttributes:@{NSFontAttributeName: font}].width + size.width * 0.03;
-        fillRect(CGRectMake(x0 - size.width * 0.012, y, w, rowH), [UIColor colorWithWhite:0.05 alpha:1]);
-        drawText(rowText, CGRectMake(x0, y + size.height * 0.006, w, rowH), font, UIColor.whiteColor, NSTextAlignmentLeft);
+        CGFloat w = [rowText sizeWithAttributes:@{NSFontAttributeName: font}].width + size.width * 0.04;
+        // A marker stroke, not a rectangle (Batch 97): ragged right end,
+        // a hair of vertical jitter, overshooting the words slightly.
+        CGFloat j = (nextRand() - 0.5) * size.height * 0.003;
+        CGFloat bx = x0 - size.width * 0.012;
+        UIBezierPath *bar = [UIBezierPath bezierPath];
+        [bar moveToPoint:CGPointMake(bx, y + j)];
+        [bar addLineToPoint:CGPointMake(bx + w + size.width * 0.006, y + j + size.height * 0.003)];
+        [bar addLineToPoint:CGPointMake(bx + w, y + rowH + j)];
+        [bar addLineToPoint:CGPointMake(bx, y + rowH + j)];
+        [bar closePath];
+        [[UIColor colorWithWhite:0.05 alpha:1] setFill];
+        [bar fill];
+        drawText(rowText, CGRectMake(x0, y + size.height * 0.006 + j, w, rowH), font, UIColor.whiteColor, NSTextAlignmentLeft);
         y += rowH + size.height * 0.008;
     }
+    // The byline under the last bar: the page names its song.
+    drawText([NSString stringWithFormat:@"%@ — %@", c->title, c->artist],
+             CGRectMake(x0, y + size.height * 0.012, size.width * 0.84, size.height * 0.025),
+             serifFont(size.height * 0.016, UIFontWeightRegular, YES),
+             [UIColor colorWithWhite:0.25 alpha:1], NSTextAlignmentLeft);
 }
 
 // Tiles: the cover in a mosaic of twelve, the lines beneath.
 static void drawTiles(SGWCtx *c) {
     CGSize size = c->size;
-    fillRect(CGRectMake(0, 0, size.width, size.height), UIColor.blackColor);
+    fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithWhite:0.03 alpha:1]);
     if (c->cover.CGImage) {
-        CGFloat gridW = size.width * 0.88, gridH = size.height * 0.42;
-        CGFloat gx = (size.width - gridW) / 2, gy = size.height * 0.05, gap = size.width * 0.012;
+        // A mosaic, not a photo grid (Batch 97): warm grout under wider
+        // gaps, a 2x2 feature tile in the middle, two flat accent tiles
+        // among the picture ones, and a whisper of per-tile tonal jitter
+        // so the set reads as handmade.
+        CGFloat gridW = size.width * 0.90, gridH = size.height * 0.52;
+        CGFloat gx = (size.width - gridW) / 2, gy = size.height * 0.045, gap = size.width * 0.016;
+        fillRect(CGRectMake(gx - gap, gy - gap, gridW + 2 * gap, gridH + 2 * gap),
+                 [UIColor colorWithRed:0.72 green:0.68 blue:0.60 alpha:1]);
         CGFloat tileW = (gridW - 3 * gap) / 4, tileH = (gridH - 2 * gap) / 3;
         CGFloat px = CGImageGetWidth(c->cover.CGImage), py = CGImageGetHeight(c->cover.CGImage);
-        for (int row = 0; row < 3; row++) {
-            for (int col = 0; col < 4; col++) {
+        seedRand([NSString stringWithFormat:@"%@%ld", c->title, (long)c->index]);
+        // The single tiles: every cell except the centre 2x2.
+        int cells[8][2] = {{0,0},{3,0},{0,1},{3,1},{0,2},{1,2},{2,2},{3,2}};
+        NSInteger flatA = (NSInteger)(nextRand() * 8), flatB = (flatA + 3 + (NSInteger)(nextRand() * 4)) % 8;
+        CGContextRef ctx = UIGraphicsGetCurrentContext();
+        for (int i = 0; i < 8; i++) {
+            int col = cells[i][0], row = cells[i][1];
+            CGRect tileRect = CGRectMake(gx + col * (tileW + gap), gy + row * (tileH + gap), tileW, tileH);
+            double stagger = (row * 4 + col) * 0.045;
+            CGContextSaveGState(ctx);
+            if (sg_frameTime >= 0) {
+                double k = MIN(1, MAX(0, (sg_frameTime - stagger) / 0.3));
+                double e = 1 - pow(1 - k, 3);
+                CGContextTranslateCTM(ctx, CGRectGetMidX(tileRect), CGRectGetMidY(tileRect));
+                CGContextScaleCTM(ctx, MAX(0.001, e), 1);
+                CGContextTranslateCTM(ctx, -CGRectGetMidX(tileRect), -CGRectGetMidY(tileRect));
+            }
+            if (i == flatA || i == flatB) {
+                UIColor *flat = i == flatA ? (c->accent ?: [UIColor colorWithRed:0.9 green:0.3 blue:0.25 alpha:1])
+                                           : [UIColor colorWithWhite:0.92 alpha:1];
+                fillRect(tileRect, flat);
+            } else {
                 CGRect crop = CGRectMake(px * col / 4, py * row / 3, px / 4, py / 3);
                 CGImageRef piece = CGImageCreateWithImageInRect(c->cover.CGImage, crop);
-                if (!piece) continue;
-                UIImage *tile = [UIImage imageWithCGImage:piece];
-                CGImageRelease(piece);
-                CGRect tileRect = CGRectMake(gx + col * (tileW + gap), gy + row * (tileH + gap), tileW, tileH);
-                if (sg_frameTime >= 0) {
-                    double k = MIN(1, MAX(0, (sg_frameTime - (row * 4 + col) * 0.045) / 0.3));
-                    double e = 1 - pow(1 - k, 3);
-                    CGContextRef ctx = UIGraphicsGetCurrentContext();
-                    CGContextSaveGState(ctx);
-                    CGContextTranslateCTM(ctx, CGRectGetMidX(tileRect), CGRectGetMidY(tileRect));
-                    CGContextScaleCTM(ctx, MAX(0.001, e), 1);
-                    CGContextTranslateCTM(ctx, -CGRectGetMidX(tileRect), -CGRectGetMidY(tileRect));
+                if (piece) {
+                    UIImage *tile = [UIImage imageWithCGImage:piece];
+                    CGImageRelease(piece);
                     [tile drawInRect:tileRect];
-                    CGContextRestoreGState(ctx);
-                } else {
-                    [tile drawInRect:tileRect];
+                    CGFloat jitter = nextRand() * 0.08;
+                    if (jitter > 0.01) fillRect(tileRect, [UIColor colorWithWhite:nextRand() > 0.5 ? 1 : 0 alpha:jitter]);
                 }
             }
+            CGContextRestoreGState(ctx);
+        }
+        // The feature tile: the cover's centre, at 2x2.
+        CGRect feature = CGRectMake(gx + (tileW + gap), gy, tileW * 2 + gap, tileH * 2 + gap);
+        CGRect fcrop = CGRectMake(px * 0.25, py * 0.08, px * 0.5, py * 0.58);
+        CGImageRef fpiece = CGImageCreateWithImageInRect(c->cover.CGImage, fcrop);
+        if (fpiece) {
+            UIImage *ftile = [UIImage imageWithCGImage:fpiece];
+            CGImageRelease(fpiece);
+            [ftile drawInRect:feature];
         }
     }
     CGFloat margin = size.width * 0.07, width = size.width - 2 * margin;
-    CGFloat y = size.height * 0.55;
+    CGFloat y = size.height * 0.615;
     UIFont *nowFont = [UIFont boldSystemFontOfSize:size.height * 0.032];
     drawText(c->current, CGRectMake(margin, y, width, size.height * 0.10), nowFont, UIColor.whiteColor, NSTextAlignmentLeft);
     y += textHeight(c->current, nowFont, width) + size.height * 0.012;
     drawText(c->next, CGRectMake(margin, y, width, size.height * 0.05),
              [UIFont systemFontOfSize:size.height * 0.021], [UIColor colorWithWhite:1 alpha:0.5], NSTextAlignmentLeft);
+    drawText([NSString stringWithFormat:@"%@ — %@", c->title ?: @"", c->artist ?: @""],
+             CGRectMake(margin, size.height * 0.925, width, size.height * 0.03),
+             [UIFont systemFontOfSize:size.height * 0.016], [UIColor colorWithWhite:1 alpha:0.4], NSTextAlignmentLeft);
 }
 
 // Polaroid: an instant print, taped and tipped, the line handwritten in the
 // white strip.
 static void drawPolaroid(SGWCtx *c) {
     CGSize size = c->size;
-    fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithRed:0.15 green:0.10 blue:0.075 alpha:1]);
+    // The surface: a warm gradient, darker at the foot (Batch 97: the
+    // print used to lie flat-filled on a flat ground, and read as a card
+    // in the app rather than a photo on a desk).
+    CGContextRef groundCtx = UIGraphicsGetCurrentContext();
+    CGColorSpaceRef gSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    NSArray *ground = @[(id)[UIColor colorWithRed:0.20 green:0.145 blue:0.105 alpha:1].CGColor,
+                        (id)[UIColor colorWithRed:0.11 green:0.075 blue:0.05 alpha:1].CGColor];
+    CGGradientRef groundGrad = CGGradientCreateWithColors(gSpace, (__bridge CFArrayRef)ground, NULL);
+    CGContextDrawLinearGradient(groundCtx, groundGrad, CGPointZero,
+                                CGPointMake(0, size.height), 0);
+    CGGradientRelease(groundGrad);
+    CGColorSpaceRelease(gSpace);
     if (c->average) fillRect(CGRectMake(0, 0, size.width, size.height), [c->average colorWithAlphaComponent:0.10]);
     CGContextRef ctx = UIGraphicsGetCurrentContext();
     CGContextSaveGState(ctx);
-    CGPoint centre = CGPointMake(size.width / 2, size.height * 0.38);
+    CGPoint centre = CGPointMake(size.width / 2, size.height * 0.415);
     CGContextTranslateCTM(ctx, centre.x, centre.y);
     CGContextRotateCTM(ctx, -0.045 + (sg_frameTime >= 0 ? sin(sg_frameTime * (2 * M_PI / 5)) * 0.012 : 0));
     CGContextTranslateCTM(ctx, -centre.x, -centre.y);
-    CGRect print = CGRectMake(size.width * 0.15, size.height * 0.09, size.width * 0.70, size.height * 0.58);
+    CGRect print = CGRectMake(size.width * 0.12, size.height * 0.115, size.width * 0.76, size.height * 0.60);
+    CGContextSaveGState(ctx);
+    CGContextSetShadowWithColor(ctx, CGSizeMake(0, size.height * 0.012), size.height * 0.020,
+                                [UIColor colorWithWhite:0 alpha:0.45].CGColor);
     fillRect(print, [UIColor colorWithRed:0.97 green:0.96 blue:0.94 alpha:1]);
-    CGRect photo = CGRectMake(print.origin.x + size.width * 0.035, print.origin.y + size.height * 0.028,
-                              print.size.width - size.width * 0.07, print.size.height - size.height * 0.155);
-    if (c->cover) drawCoverInRect(c->cover, photo);
+    CGContextRestoreGState(ctx);
+    CGRect photo = CGRectMake(print.origin.x + size.width * 0.038, print.origin.y + size.height * 0.030,
+                              print.size.width - size.width * 0.076, print.size.height - size.height * 0.155);
+    if (c->cover) {
+        drawCoverInRect(c->cover, photo);
+        // Instant-film softness: a warm wash and a gentle falloff.
+        fillRect(photo, [UIColor colorWithRed:1 green:0.95 blue:0.85 alpha:0.06]);
+        CGContextSaveGState(ctx);
+        CGContextClipToRect(ctx, photo);
+        CGColorSpaceRef pSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        NSArray *fade = @[(id)[UIColor colorWithWhite:0 alpha:0].CGColor,
+                          (id)[UIColor colorWithWhite:0 alpha:0.10].CGColor];
+        CGGradientRef fadeGrad = CGGradientCreateWithColors(pSpace, (__bridge CFArrayRef)fade, NULL);
+        CGContextDrawLinearGradient(ctx, fadeGrad, CGPointMake(0, photo.origin.y + photo.size.height * 0.55),
+                                    CGPointMake(0, CGRectGetMaxY(photo)), 0);
+        CGGradientRelease(fadeGrad);
+        CGColorSpaceRelease(pSpace);
+        CGContextRestoreGState(ctx);
+    }
     UIFont *hand = [UIFont fontWithName:@"Bradley Hand" size:size.height * 0.034]
         ?: [UIFont systemFontOfSize:size.height * 0.030 weight:UIFontWeightMedium];
     CGFloat captionY = CGRectGetMaxY(photo) + size.height * 0.018;
@@ -1459,10 +2408,22 @@ static void drawPolaroid(SGWCtx *c) {
     }
     drawText(c->current, CGRectMake(print.origin.x, captionY, print.size.width, size.height * 0.06),
              hand, [UIColor colorWithWhite:0.13 alpha:1], NSTextAlignmentCenter);
+    // The tape rides the print now (it is drawn inside the rotation),
+    // translucent, with torn ends (Batch 97).
+    CGFloat tapeW = print.size.width * 0.34, tapeH = size.height * 0.030;
+    CGFloat tapeX = print.origin.x + (print.size.width - tapeW) / 2;
+    CGFloat tapeY = print.origin.y - tapeH * 0.42;
+    UIBezierPath *tape = [UIBezierPath bezierPath];
+    [tape moveToPoint:CGPointMake(tapeX, tapeY + tapeH * 0.15)];
+    [tape addLineToPoint:CGPointMake(tapeX + tapeW * 0.012, tapeY + tapeH * 0.55)];
+    [tape addLineToPoint:CGPointMake(tapeX, tapeY + tapeH * 0.9)];
+    [tape addLineToPoint:CGPointMake(tapeX + tapeW, tapeY + tapeH)];
+    [tape addLineToPoint:CGPointMake(tapeX + tapeW * 0.99, tapeY + tapeH * 0.5)];
+    [tape addLineToPoint:CGPointMake(tapeX + tapeW, tapeY)];
+    [tape closePath];
+    [[UIColor colorWithRed:0.93 green:0.88 blue:0.71 alpha:0.55] setFill];
+    [tape fill];
     CGContextRestoreGState(ctx);
-    // The tape tab, unrotated, over the top edge.
-    CGRect tape = CGRectMake(size.width * 0.40, size.height * 0.062, size.width * 0.20, size.height * 0.034);
-    fillRect(tape, [UIColor colorWithRed:0.92 green:0.87 blue:0.70 alpha:0.75]);
 }
 
 // Subtitles: a letterboxed film frame, the cover in greyscale, the line as a
@@ -1470,42 +2431,58 @@ static void drawPolaroid(SGWCtx *c) {
 static void drawSubtitles(SGWCtx *c) {
     CGSize size = c->size;
     fillRect(CGRectMake(0, 0, size.width, size.height), UIColor.blackColor);
-    CGRect frame = CGRectMake(0, size.height * 0.19, size.width, size.height * 0.62);
+    // A film frame, in colour (Batch 97: the old frame was desaturated
+    // to grey, which read as a B&W photo filter, and its yellow mono
+    // subtitle was fansub-meme, not cinema).
+    CGRect frame = CGRectMake(0, size.height * 0.16, size.width, size.height * 0.68);
     if (c->cover) {
-        CIFilter *grey = [CIFilter filterWithName:@"CIColorControls"];
-        [grey setValue:[CIImage imageWithCGImage:c->cover.CGImage] forKey:kCIInputImageKey];
-        [grey setValue:@0 forKey:@"inputSaturation"];
-        UIImage *mono = ciResult(c->cover, grey);
-        drawCoverInRect(mono ?: c->cover, frame);
+        CIFilter *grade = [CIFilter filterWithName:@"CIColorControls"];
+        [grade setValue:[CIImage imageWithCGImage:c->cover.CGImage] forKey:kCIInputImageKey];
+        [grade setValue:@0.85 forKey:@"inputSaturation"];
+        [grade setValue:@1.04 forKey:@"inputContrast"];
+        UIImage *graded = ciResult(c->cover, grade);
+        drawCoverInRect(graded ?: c->cover, frame);
+        if (c->average) {
+            CGContextRef gctx = UIGraphicsGetCurrentContext();
+            CGContextSaveGState(gctx);
+            CGContextClipToRect(gctx, frame);
+            CGContextSetBlendMode(gctx, kCGBlendModeOverlay);
+            fillRect(frame, [c->average colorWithAlphaComponent:0.10]);
+            CGContextRestoreGState(gctx);
+        }
     }
-    UIFont *font = monoFont(size.height * 0.027, UIFontWeightBold);
+    // Cinema subtitles: a humanist sans, white, with the black outline
+    // that keeps them readable over any frame.
+    UIFont *font = [UIFont systemFontOfSize:size.height * 0.026 weight:UIFontWeightSemibold];
     NSMutableAttributedString *sub = [[NSMutableAttributedString alloc] initWithString:c->current ?: @""];
     [sub addAttributes:@{NSFontAttributeName: font,
-                         NSForegroundColorAttributeName: [UIColor colorWithRed:1 green:0.85 blue:0.20 alpha:1],
+                         NSForegroundColorAttributeName: UIColor.whiteColor,
                          NSStrokeColorAttributeName: UIColor.blackColor,
-                         NSStrokeWidthAttributeName: @(-3.5)}
+                         NSStrokeWidthAttributeName: @(-4)}
                 range:NSMakeRange(0, sub.length)];
     NSMutableParagraphStyle *centre = [NSMutableParagraphStyle new];
     centre.alignment = NSTextAlignmentCenter;
     [sub addAttribute:NSParagraphStyleAttributeName value:centre range:NSMakeRange(0, sub.length)];
-    CGFloat h = ceil([sub boundingRectWithSize:CGSizeMake(size.width * 0.86, frame.size.height * 0.4)
-                                       options:NSStringDrawingUsesLineFragmentOrigin context:nil].size.height);
+    CGFloat subH = ceil([sub boundingRectWithSize:CGSizeMake(size.width * 0.86, frame.size.height * 0.4)
+                                          options:NSStringDrawingUsesLineFragmentOrigin context:nil].size.height);
+    BOOL hasTranslation = c->line.translation.length > 0;
+    CGFloat transH = hasTranslation ? size.height * 0.026 : 0;
+    CGFloat blockBottom = CGRectGetMaxY(frame) - size.height * 0.032;
+    CGFloat subY = blockBottom - transH - (hasTranslation ? size.height * 0.008 : 0) - subH;
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGContextSaveGState(ctx);
     if (sg_frameTime >= 0) {
         double k = MIN(1, sg_frameTime / 0.3);
-        CGContextRef ctx = UIGraphicsGetCurrentContext();
-        CGContextSaveGState(ctx);
         CGContextTranslateCTM(ctx, 0, (1 - (1 - pow(1 - k, 3))) * size.height * 0.012);
-        [sub drawWithRect:CGRectMake(size.width * 0.07, CGRectGetMaxY(frame) - h - size.height * 0.045, size.width * 0.86, h)
-                  options:NSStringDrawingUsesLineFragmentOrigin context:nil];
-        CGContextRestoreGState(ctx);
-    } else {
-        [sub drawWithRect:CGRectMake(size.width * 0.07, CGRectGetMaxY(frame) - h - size.height * 0.045, size.width * 0.86, h)
-                  options:NSStringDrawingUsesLineFragmentOrigin context:nil];
     }
-    if (c->line.translation.length) {
-        drawText(c->line.translation, CGRectMake(size.width * 0.07, CGRectGetMaxY(frame) - size.height * 0.035, size.width * 0.86, size.height * 0.03),
-                 [UIFont systemFontOfSize:size.height * 0.017], UIColor.whiteColor, NSTextAlignmentCenter);
+    [sub drawWithRect:CGRectMake(size.width * 0.07, subY, size.width * 0.86, subH)
+              options:NSStringDrawingUsesLineFragmentOrigin context:nil];
+    if (hasTranslation) {
+        drawText(c->line.translation, CGRectMake(size.width * 0.07, blockBottom - transH, size.width * 0.86, transH),
+                 [UIFont systemFontOfSize:size.height * 0.016], [UIColor colorWithWhite:1 alpha:0.85],
+                 NSTextAlignmentCenter);
     }
+    CGContextRestoreGState(ctx);
 }
 
 // Line number: editorial cream, the line's number enormous and pale behind
@@ -1514,9 +2491,20 @@ static void drawLineNumber(SGWCtx *c) {
     CGSize size = c->size;
     fillRect(CGRectMake(0, 0, size.width, size.height), [UIColor colorWithRed:0.955 green:0.945 blue:0.915 alpha:1]);
     CGFloat margin = size.width * 0.07, width = size.width - 2 * margin;
+    // The colophon header: the page names its song (Batch 97 — the card
+    // used to be anonymous), small caps, letterspaced, over the ghost.
+    NSString *colophon = [NSString stringWithFormat:@"%@ — %@", c->title.uppercaseString, c->artist.uppercaseString];
+    NSMutableAttributedString *head = [[NSMutableAttributedString alloc] initWithString:colophon];
+    [head addAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:size.height * 0.013 weight:UIFontWeightMedium],
+                          NSForegroundColorAttributeName: [UIColor colorWithWhite:0.45 alpha:1],
+                          NSKernAttributeName: @1.5}
+                  range:NSMakeRange(0, head.length)];
+    [head drawInRect:CGRectMake(margin, size.height * 0.032, width, size.height * 0.02)];
+    // The ghost numeral in a thin weight — bold at 7% still read chunky.
     drawText([NSString stringWithFormat:@"%ld", (long)(c->index + 1)],
              CGRectMake(margin, size.height * 0.015, width, size.height * 0.30),
-             [UIFont boldSystemFontOfSize:size.height * 0.26], [UIColor colorWithWhite:0 alpha:0.07], NSTextAlignmentLeft);
+             [UIFont systemFontOfSize:size.height * 0.26 weight:UIFontWeightThin],
+             [UIColor colorWithWhite:0 alpha:0.07], NSTextAlignmentLeft);
     CGFloat y = size.height * 0.36;
     UIFont *nowFont = [UIFont boldSystemFontOfSize:size.height * 0.036];
     UIColor *ink = [UIColor colorWithWhite:0.07 alpha:1];
@@ -1535,6 +2523,11 @@ static void drawLineNumber(SGWCtx *c) {
         fraction = (c->index + 1) / (double)c->count;
     }
     fillRect(CGRectMake(margin, y, width * fraction, 3), c->accent ?: ink);
+    // The footer colophon: where this line sits in the song.
+    drawText([NSString stringWithFormat:@"%ld / %ld", (long)(c->index + 1), (long)MAX(c->count, c->index + 1)],
+             CGRectMake(margin, size.height * 0.93, width, size.height * 0.02),
+             [UIFont systemFontOfSize:size.height * 0.013 weight:UIFontWeightMedium],
+             [UIColor colorWithWhite:0.45 alpha:1], NSTextAlignmentRight);
 }
 
 // The second research wave (Batch 81): three more original renderers,
@@ -1567,11 +2560,27 @@ static void drawPulseBars(SGWCtx *c) {
     double bases[36];
     for (NSInteger i = 0; i < bars; i++) bases[i] = 0.15 + nextRand() * 0.7;
     UIColor *barColor = c->accent ?: [UIColor colorWithRed:0.11 green:0.73 blue:0.33 alpha:1];
+    // The waveform tells time (Batch 97): bars behind the playhead burn
+    // full, bars ahead of it sit dim — and every bar is round-capped,
+    // over a hairline through the field's centre.
+    double fraction = 0;
+    if (c->duration > 0) {
+        NSInteger position = sg_frameTime >= 0 && c->line
+            ? c->line.start + (NSInteger)(sg_frameTime * 1000) : SGKaraokePositionMs();
+        fraction = position >= 0 ? MIN(1, position / 1000.0 / c->duration) : 0;
+    } else if (c->count > 0) {
+        fraction = (c->index + 1) / (double)c->count;
+    }
+    fillRect(CGRectMake(margin, fieldY + fieldH / 2, width, 1), [UIColor colorWithWhite:1 alpha:0.10]);
+    UIColor *dimBar = [barColor colorWithAlphaComponent:0.35];
     for (NSInteger i = 0; i < bars; i++) {
         double h = bases[i];
         if (sg_frameTime >= 0) h = 0.15 + 0.7 * (0.5 + 0.5 * sin(sg_frameTime * 2.4 + i * 0.65 + bases[i] * 4));
         CGFloat bh = fieldH * h;
-        fillRect(CGRectMake(margin + i * (barW + gap), fieldY + (fieldH - bh) / 2, barW, bh), barColor);
+        CGRect barRect = CGRectMake(margin + i * (barW + gap), fieldY + (fieldH - bh) / 2, barW, bh);
+        UIBezierPath *barPath = [UIBezierPath bezierPathWithRoundedRect:barRect cornerRadius:barW / 2];
+        [((i + 0.5) / bars <= fraction ? barColor : dimBar) setFill];
+        [barPath fill];
     }
 }
 
@@ -1580,34 +2589,74 @@ static void drawPulseBars(SGWCtx *c) {
 // scrim so it stays readable.
 static void drawWarpFlow(SGWCtx *c) {
     CGSize size = c->size;
+    // Two colours in motion (Batch 97): the old flow was one hue walking
+    // a straight ramp to black in even steps — a posterised gradient,
+    // nothing warped. Now the bands pour: their heights ease as they
+    // fall, the colour path bends average → accent → black, and a sine
+    // wobbles the interpolation so the slices read as liquid, not steps.
     UIColor *avg = c->average ?: [UIColor colorWithRed:0.11 green:0.73 blue:0.33 alpha:1];
-    CGFloat r, g, b, a;
-    [avg getRed:&r green:&g blue:&b alpha:&a];
-    NSInteger bands = 28;
+    UIColor *acc = c->accent ?: [UIColor colorWithRed:0.2 green:0.6 blue:1 alpha:1];
+    CGFloat ar, ag, ab, aa, cr, cg, cb, ca;
+    [avg getRed:&ar green:&ag blue:&ab alpha:&aa];
+    [acc getRed:&cr green:&cg blue:&cb alpha:&ca];
+    double phase = sg_frameTime >= 0 ? sg_frameTime * 0.9 : 0.6;
+    NSInteger bands = 30;
+    CGFloat heights[30], totalH = 0;
     for (NSInteger i = 0; i < bands; i++) {
         CGFloat t = i / (CGFloat)(bands - 1);
-        // Each band is the cover colour walking to black, so the flow
-        // reads as light spilling downward.
-        UIColor *band = [UIColor colorWithRed:r * (1 - t * 0.85) green:g * (1 - t * 0.85)
-                                         blue:b * (1 - t * 0.85) alpha:1];
-        fillRect(CGRectMake(0, i * size.height / bands, size.width, size.height / bands + 1), band);
+        heights[i] = 0.020 + 0.020 * t;
+        totalH += heights[i];
+    }
+    CGFloat y = 0;
+    for (NSInteger i = 0; i < bands; i++) {
+        CGFloat t = i / (CGFloat)(bands - 1);
+        CGFloat bandH = size.height * heights[i] / totalH;
+        CGFloat tt = MIN(1, MAX(0, t + 0.08 * sin(t * M_PI * 2 + phase)));
+        CGFloat r, g, b;
+        if (tt < 0.62) {
+            CGFloat k = tt / 0.62;
+            r = ar + (cr - ar) * k; g = ag + (cg - ag) * k; b = ab + (cb - ab) * k;
+        } else {
+            CGFloat k = (tt - 0.62) / 0.38;
+            r = cr * (1 - k); g = cg * (1 - k); b = cb * (1 - k);
+        }
+        fillRect(CGRectMake(0, y, size.width, bandH + 1), [UIColor colorWithRed:r green:g blue:b alpha:1]);
+        y += bandH;
     }
     if (sg_frameTime >= 0) {
-        // One bright band drifting down the card on a slow loop.
+        // One bright band drifting down the card, soft at both edges.
         CGFloat travel = fmod(sg_frameTime * size.height * 0.22, size.height * 1.3);
-        CGFloat bandY = travel - size.height * 0.15;
-        fillRect(CGRectMake(0, bandY, size.width, size.height * 0.09),
-                 [UIColor colorWithWhite:1 alpha:0.10]);
+        CGFloat bandY = travel - size.height * 0.15, bandH = size.height * 0.11;
+        CGContextRef bctx = UIGraphicsGetCurrentContext();
+        CGColorSpaceRef bSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        CGFloat stops[] = {0, 0.5, 1};
+        NSArray *bandCols = @[(id)[UIColor colorWithWhite:1 alpha:0].CGColor,
+                              (id)[UIColor colorWithWhite:1 alpha:0.10].CGColor,
+                              (id)[UIColor colorWithWhite:1 alpha:0].CGColor];
+        CGGradientRef bandGrad = CGGradientCreateWithColors(bSpace, (__bridge CFArrayRef)bandCols, stops);
+        CGContextDrawLinearGradient(bctx, bandGrad, CGPointMake(0, bandY), CGPointMake(0, bandY + bandH), 0);
+        CGGradientRelease(bandGrad);
+        CGColorSpaceRelease(bSpace);
     }
-    fillRect(CGRectMake(0, size.height * 0.55, size.width, size.height * 0.45),
-             [UIColor colorWithWhite:0 alpha:0.55]);
+    // The scrim feathers in instead of cutting the flow with a hard edge.
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGFloat locs[] = {0, 0.55, 1};
+    NSArray *scrimCols = @[(id)[UIColor colorWithWhite:0 alpha:0].CGColor,
+                           (id)[UIColor colorWithWhite:0 alpha:0.62].CGColor,
+                           (id)[UIColor colorWithWhite:0 alpha:0.62].CGColor];
+    CGGradientRef scrim = CGGradientCreateWithColors(space, (__bridge CFArrayRef)scrimCols, locs);
+    CGContextDrawLinearGradient(ctx, scrim, CGPointMake(0, size.height * 0.44),
+                                CGPointMake(0, size.height), 0);
+    CGGradientRelease(scrim);
+    CGColorSpaceRelease(space);
     CGFloat margin = size.width * 0.07, width = size.width - 2 * margin;
     UIFont *nowFont = [UIFont boldSystemFontOfSize:size.height * 0.042];
-    CGFloat y = size.height * 0.60;
-    drawText(c->current, CGRectMake(margin, y, width, size.height * 0.18), nowFont,
+    CGFloat ty = size.height * 0.62;
+    drawText(c->current, CGRectMake(margin, ty, width, size.height * 0.18), nowFont,
              UIColor.whiteColor, NSTextAlignmentLeft);
-    y += textHeight(c->current, nowFont, width) + size.height * 0.012;
-    drawText(c->next, CGRectMake(margin, y, width, size.height * 0.06),
+    ty += textHeight(c->current, nowFont, width) + size.height * 0.012;
+    drawText(c->next, CGRectMake(margin, ty, width, size.height * 0.06),
              [UIFont systemFontOfSize:size.height * 0.024], [UIColor colorWithWhite:0.75 alpha:1], NSTextAlignmentLeft);
     drawText([NSString stringWithFormat:@"%@ — %@", c->title ?: @"", c->artist ?: @""],
              CGRectMake(margin, size.height * 0.925, width, size.height * 0.05),
@@ -1625,9 +2674,15 @@ static void drawOLEDStealth(SGWCtx *c) {
     drawText(c->artist, CGRectMake(margin, size.height * 0.092, width, size.height * 0.05),
              [UIFont systemFontOfSize:size.height * 0.020], [UIColor colorWithWhite:0.38 alpha:1], NSTextAlignmentLeft);
     UIFont *nowFont = [UIFont boldSystemFontOfSize:size.height * 0.038];
+    // A whisper of what just played, at the same weight as what's next.
+    if (c->prev.length) {
+        drawText(c->prev, CGRectMake(margin, size.height * 0.325, width, size.height * 0.05),
+                 [UIFont systemFontOfSize:size.height * 0.023], [UIColor colorWithWhite:0.30 alpha:1],
+                 NSTextAlignmentLeft);
+    }
     CGFloat y = size.height * 0.38;
     drawText(c->current, CGRectMake(margin, y, width, size.height * 0.16), nowFont,
-             c->accent ?: UIColor.whiteColor, NSTextAlignmentLeft);
+             [(c->accent ?: UIColor.whiteColor) colorWithAlphaComponent:0.88], NSTextAlignmentLeft);
     y += textHeight(c->current, nowFont, width) + size.height * 0.014;
     drawText(c->next, CGRectMake(margin, y, width, size.height * 0.06),
              [UIFont systemFontOfSize:size.height * 0.023], [UIColor colorWithWhite:0.42 alpha:1], NSTextAlignmentLeft);
@@ -1863,6 +2918,8 @@ static UIImage *drawClipFrame(NSInteger style, CGSize size, NSString *prev, NSSt
         sg_frameTime = t;
         if (style == SGLyricArtworkRecord) {
             image = drawRecordArtwork(size, prev, current, next, coverImage, line, title, artist);
+        } else if (style == SGLyricArtworkChat) {
+            image = drawChatArtwork(size, prev, current, next, coverImage, line, title, artist);
         } else if (style >= SGLyricArtworkTwitter) {
             image = drawWorkshopArtwork(style, size, prev, current, next, coverImage, line, title, artist,
                                         index, count, prevStart, nextStart, duration);
@@ -2114,7 +3171,7 @@ static void tick(void) {
                     return drawRecordArtwork(size, prev, current, next, coverImage, line, title, artist);
                 }
                 if (style == SGLyricArtworkChat) {
-                    return drawChatArtwork(size, prev, current, next, coverImage, title, artist);
+                    return drawChatArtwork(size, prev, current, next, coverImage, line, title, artist);
                 }
                 if (style >= SGLyricArtworkTwitter) {
                     return drawWorkshopArtwork(style, size, prev, current, next, coverImage, line, title, artist,
@@ -2210,7 +3267,7 @@ UIImage *SGLyricArtworkSample(NSInteger style, CGSize size) {
         if (style == SGLyricArtworkRecord) {
             drawn = drawRecordArtwork(size, prev, current, next, cover, nil, title, artist);
         } else if (style == SGLyricArtworkChat) {
-            drawn = drawChatArtwork(size, prev, current, next, cover, title, artist);
+            drawn = drawChatArtwork(size, prev, current, next, cover, nil, title, artist);
         } else if (style >= SGLyricArtworkTwitter) {
             drawn = drawWorkshopArtwork(style, size, prev, current, next, cover, nil, title, artist,
                                         11, 38, 0, 0, 214);

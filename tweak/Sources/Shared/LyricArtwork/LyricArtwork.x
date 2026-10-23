@@ -349,11 +349,14 @@ static UIBezierPath *bubblePath(CGRect rect, BOOL outgoing, CGFloat radius) {
 }
 
 // One bubble of the conversation; returns the y under it. Incoming sits
-// left in iMessage's grey with near-black words; outgoing right, in the
+// left in the room's grey with the room's ink; outgoing right, in the
 // blue gradient, white words — the attributed text carries the karaoke
-// sweep for the line being sung.
+// sweep for the line being sung. entranceT is the seconds since the
+// line began in a clip (or -1): while it runs, the bubble pops in from
+// its tail corner the way a sent message does, springing a touch past
+// full size before it settles.
 static CGFloat drawBubble(NSAttributedString *text, NSString *plain, CGFloat y, CGSize size,
-                          BOOL outgoing, UIFont *font) {
+                          BOOL outgoing, UIFont *font, UIColor *incomingFill, double entranceT) {
     if (!plain.length) return y;
     CGFloat maxText = size.width * 0.66;
     CGRect measured = [plain boundingRectWithSize:CGSizeMake(maxText, CGFLOAT_MAX)
@@ -366,8 +369,21 @@ static CGFloat drawBubble(NSAttributedString *text, NSString *plain, CGFloat y, 
     CGRect bubble = CGRectMake(x, y, width, height);
     CGFloat radius = MIN(height * 0.5, size.width * 0.048);
     UIBezierPath *path = bubblePath(bubble, outgoing, radius);
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    BOOL entering = entranceT >= 0 && entranceT < 0.38;
+    if (entering) {
+        double t = entranceT / 0.38;
+        double e = 1 + 2.70158 * pow(t - 1, 3) + 1.70158 * pow(t - 1, 2);
+        CGFloat scale = 0.55 + 0.45 * (CGFloat)e;
+        CGContextSaveGState(ctx);
+        CGContextSetAlpha(ctx, (CGFloat)MIN(1, entranceT / 0.15));
+        CGPoint anchor = outgoing ? CGPointMake(CGRectGetMaxX(bubble), CGRectGetMaxY(bubble))
+                                  : CGPointMake(bubble.origin.x, CGRectGetMaxY(bubble));
+        CGContextTranslateCTM(ctx, anchor.x, anchor.y);
+        CGContextScaleCTM(ctx, scale, scale);
+        CGContextTranslateCTM(ctx, -anchor.x, -anchor.y);
+    }
     if (outgoing) {
-        CGContextRef ctx = UIGraphicsGetCurrentContext();
         CGContextSaveGState(ctx);
         [path addClip];
         CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
@@ -380,11 +396,12 @@ static CGFloat drawBubble(NSAttributedString *text, NSString *plain, CGFloat y, 
         CGColorSpaceRelease(space);
         CGContextRestoreGState(ctx);
     } else {
-        [[UIColor colorWithRed:0.898 green:0.898 blue:0.918 alpha:1] setFill];
+        [incomingFill setFill];
         [path fill];
     }
     [text drawWithRect:CGRectMake(x + padX, y + padY, measured.size.width, measured.size.height)
                options:NSStringDrawingUsesLineFragmentOrigin context:nil];
+    if (entering) CGContextRestoreGState(ctx);
     return y + height;
 }
 
@@ -398,11 +415,47 @@ static void drawCenteredAt(NSString *text, CGRect rect, UIFont *font, UIColor *c
       withAttributes:attrs];
 }
 
+// The typing indicator: three dots breathing in an incoming bubble,
+// the way iMessage shows someone mid-reply. age is the seconds since
+// it appeared (clips), or -1 for a posed still, where the dots rest at
+// staggered strengths.
+static CGFloat drawTypingBubble(CGFloat y, CGSize size, UIColor *fill, UIColor *dotBase, double age) {
+    CGFloat H = size.height, W = size.width;
+    CGFloat dotD = H * 0.012, gap = H * 0.0095, padX = W * 0.028, padY = H * 0.013;
+    CGFloat bw = padX * 2 + dotD * 3 + gap * 2;
+    CGFloat bh = padY * 2 + dotD;
+    CGRect bubble = CGRectMake(W * 0.035, y, bw, bh);
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGContextSaveGState(ctx);
+    if (age >= 0 && age < 0.25) {
+        CGContextSetAlpha(ctx, (CGFloat)(age / 0.25));
+        CGContextTranslateCTM(ctx, 0, (1 - age / 0.25) * H * 0.008);
+    }
+    [fill setFill];
+    [bubblePath(bubble, NO, MIN(bh * 0.5, W * 0.048)) fill];
+    CGFloat cy = y + bh / 2;
+    for (int i = 0; i < 3; i++) {
+        CGFloat alpha, lift = 0;
+        if (age >= 0) {
+            double wave = sin(age * 4.4 - i * 0.55);
+            alpha = 0.35 + 0.45 * (CGFloat)MAX(0, wave);
+            lift = (CGFloat)MAX(0, wave) * H * 0.0035;
+        } else {
+            alpha = 0.85 - i * 0.25;
+        }
+        [[dotBase colorWithAlphaComponent:alpha] setFill];
+        CGFloat cx = bubble.origin.x + padX + dotD / 2 + i * (dotD + gap);
+        [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(cx - dotD / 2, cy - lift - dotD / 2, dotD, dotD)] fill];
+    }
+    CGContextRestoreGState(ctx);
+    return y + bh;
+}
+
 // The contact's face at the top of the conversation: the cover, round.
-static void drawAvatar(UIImage *cover, CGFloat centerX, CGFloat top, CGFloat d, CGSize size) {
+static void drawAvatar(UIImage *cover, CGFloat centerX, CGFloat top, CGFloat d, BOOL dark) {
     CGRect rect = CGRectMake(centerX - d / 2, top, d, d);
     if (!cover) {
-        [[UIColor colorWithRed:0.78 green:0.78 blue:0.80 alpha:1] setFill];
+        [[UIColor colorWithWhite:dark ? 0.30 : 0.78 alpha:1] setFill];
         [[UIBezierPath bezierPathWithOvalInRect:rect] fill];
         drawCenteredAt(@"♪", rect, [UIFont systemFontOfSize:d * 0.52 weight:UIFontWeightSemibold],
                        UIColor.whiteColor);
@@ -419,33 +472,33 @@ static void drawAvatar(UIImage *cover, CGFloat centerX, CGFloat top, CGFloat d, 
 // The bar the message was typed into, pinned to the floor of the card:
 // a camera at the left, the pill field with its placeholder, and the
 // blue send arrow. It does no work; it just makes the room a room.
-static void drawComposeBar(CGSize size) {
+static void drawComposeBar(CGSize size, BOOL dark) {
     CGFloat W = size.width, H = size.height;
     CGFloat barH = H * 0.078;
     CGFloat top = H - barH;
-    [[UIColor colorWithRed:0.80 green:0.80 blue:0.82 alpha:1] setFill];
+    [[UIColor colorWithWhite:dark ? 1 : 0 alpha:dark ? 0.22 : 0.20] setFill];
     UIRectFill(CGRectMake(0, top, W, MAX(1, H * 0.0014)));
-    [UIColor.whiteColor setFill];
+    [dark ? UIColor.blackColor : UIColor.whiteColor setFill];
     UIRectFill(CGRectMake(0, top, W, barH));
     CGFloat midY = top + barH / 2;
     CGFloat camH = H * 0.024, camW = camH * 1.3;
     CGRect cam = CGRectMake(W * 0.045, midY - camH / 2, camW, camH);
-    [[UIColor colorWithWhite:0.60 alpha:1] setFill];
+    [[UIColor colorWithWhite:dark ? 0.32 : 0.60 alpha:1] setFill];
     [[UIBezierPath bezierPathWithRoundedRect:cam cornerRadius:camH * 0.30] fill];
-    [UIColor.whiteColor setFill];
+    [dark ? UIColor.blackColor : UIColor.whiteColor setFill];
     [[UIBezierPath bezierPathWithOvalInRect:CGRectInset(cam, camW * 0.36, camH * 0.24)] fill];
     CGFloat fieldX = CGRectGetMaxX(cam) + W * 0.028;
     CGFloat fieldH = H * 0.044;
     CGRect field = CGRectMake(fieldX, midY - fieldH / 2, W * 0.955 - fieldX, fieldH);
     UIBezierPath *pill = [UIBezierPath bezierPathWithRoundedRect:field cornerRadius:fieldH / 2];
-    [[UIColor colorWithRed:0.78 green:0.78 blue:0.80 alpha:1] setStroke];
+    [[UIColor colorWithWhite:dark ? 0.30 : 0.78 alpha:1] setStroke];
     pill.lineWidth = MAX(1, H * 0.0016);
     [pill stroke];
     [@"iMessage" drawInRect:CGRectMake(field.origin.x + W * 0.030, midY - H * 0.0125,
                                        field.size.width * 0.55, H * 0.025)
             withAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:H * 0.019],
                              NSForegroundColorAttributeName:
-                                 [UIColor colorWithRed:0.70 green:0.70 blue:0.72 alpha:1]}];
+                                 [UIColor colorWithWhite:dark ? 0.45 : 0.70 alpha:1]}];
     CGFloat sd = fieldH * 0.80;
     CGRect disc = CGRectMake(CGRectGetMaxX(field) - sd - H * 0.004, midY - sd / 2, sd, sd);
     [[UIColor colorWithRed:0.0 green:0.48 blue:1.0 alpha:1] setFill];
@@ -454,13 +507,18 @@ static void drawComposeBar(CGSize size) {
                    UIColor.whiteColor);
 }
 
-// The Chat, rebuilt as the room it is named after (Batch 97): iMessage
-// in daylight — white room, the song as the contact (its cover for a
-// face, its name under it), the timestamp divider, what was sung
-// arriving from the left in grey, the line being sung sent from the
-// right in the blue gradient with the karaoke sweep inside it,
-// "Delivered" under it, what's next waiting on the left, and the
-// compose bar along the floor.
+// The Chat, rebuilt as the room it is named after (Batch 97): iMessage,
+// in the light room or the dark one (Chat theme in the settings). The
+// song is the contact (its cover for a face, its name under it), the
+// timestamp divider sits under the header, what was sung arrives from
+// the left, and the line being sung is sent from the right in the blue
+// gradient with the karaoke sweep inside it.
+//
+// And it behaves like texting someone the lyrics: the next line is
+// never on screen early. While the second half of the current line
+// plays, the other side is typing — three dots in a bubble — and when
+// the song moves on, that line pops in from its corner like a message
+// arriving, instead of simply being there.
 static UIImage *drawChatArtwork(CGSize size, NSString *prev, NSString *current, NSString *next,
                                 UIImage *cover, SGKaraokeLine *line, NSString *title, NSString *artist) {
     UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
@@ -469,10 +527,22 @@ static UIImage *drawChatArtwork(CGSize size, NSString *prev, NSString *current, 
     return [[[UIGraphicsImageRenderer alloc] initWithSize:size format:format]
         imageWithActions:^(UIGraphicsImageRendererContext *context) {
         CGFloat W = size.width, H = size.height;
-        [UIColor.whiteColor setFill];
+        NSInteger theme = SGInt(SGKeyLyricArtworkChatTheme, 0);
+        BOOL dark = theme == 1 || (theme == 2 &&
+            UIScreen.mainScreen.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark);
+        UIColor *ink = dark ? UIColor.whiteColor
+                            : [UIColor colorWithRed:0.11 green:0.11 blue:0.12 alpha:1];
+        UIColor *grey = dark ? [UIColor colorWithWhite:0.62 alpha:1]
+                             : [UIColor colorWithRed:0.56 green:0.56 blue:0.58 alpha:1];
+        UIColor *hair = dark ? [UIColor colorWithWhite:1 alpha:0.14]
+                             : [UIColor colorWithRed:0.90 green:0.90 blue:0.92 alpha:1];
+        UIColor *inFill = dark ? [UIColor colorWithRed:0.149 green:0.145 blue:0.165 alpha:1]
+                               : [UIColor colorWithRed:0.898 green:0.898 blue:0.918 alpha:1];
+        UIColor *inInk = dark ? UIColor.whiteColor : ink;
+        UIColor *dotBase = dark ? [UIColor colorWithWhite:0.80 alpha:1]
+                                : [UIColor colorWithWhite:0.52 alpha:1];
+        [dark ? UIColor.blackColor : UIColor.whiteColor setFill];
         UIRectFill(CGRectMake(0, 0, W, H));
-        UIColor *ink = [UIColor colorWithRed:0.11 green:0.11 blue:0.12 alpha:1];
-        UIColor *grey = [UIColor colorWithRed:0.56 green:0.56 blue:0.58 alpha:1];
         CGFloat y = H * 0.030;
         [@"‹" drawInRect:CGRectMake(W * 0.030, y - H * 0.006, W * 0.10, H * 0.05)
           withAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:H * 0.052
@@ -480,7 +550,7 @@ static UIImage *drawChatArtwork(CGSize size, NSString *prev, NSString *current, 
                            NSForegroundColorAttributeName:
                                [UIColor colorWithRed:0.0 green:0.48 blue:1.0 alpha:1]}];
         CGFloat d = W * 0.115;
-        drawAvatar(cover, W / 2, y, d, size);
+        drawAvatar(cover, W / 2, y, d, dark);
         y += d + H * 0.007;
         y = drawCentered(title.length ? title : @"♪", y, H, size,
                          [UIFont systemFontOfSize:H * 0.0215 weight:UIFontWeightSemibold], ink);
@@ -489,7 +559,7 @@ static UIImage *drawChatArtwork(CGSize size, NSString *prev, NSString *current, 
                              [UIFont systemFontOfSize:H * 0.0165], grey);
         }
         y += H * 0.014;
-        [[UIColor colorWithRed:0.90 green:0.90 blue:0.92 alpha:1] setFill];
+        [hair setFill];
         UIRectFill(CGRectMake(0, y, W, MAX(1, H * 0.0014)));
         y += H * 0.020;
         y = drawCentered(@"iMessage", y, H, size,
@@ -500,25 +570,33 @@ static UIImage *drawChatArtwork(CGSize size, NSString *prev, NSString *current, 
                                            timeStyle:NSDateFormatterShortStyle]];
         y = drawCentered(stamp, y, H, size, [UIFont systemFontOfSize:H * 0.0145], grey);
         y += H * 0.022;
+        // Where this line stands: the second half of it is when the
+        // other side starts typing the reply.
+        double fraction = 0, typingAge = -1;
+        if (line) {
+            double dur = (line.end - line.start) / 1000.0;
+            if (sg_frameTime >= 0) {
+                fraction = dur > 0 ? MIN(1, sg_frameTime / dur) : 1;
+                typingAge = sg_frameTime - 0.5 * dur;
+            } else {
+                NSInteger pos = SGKaraokePositionMs();
+                fraction = (dur > 0 && pos >= line.start)
+                    ? MIN(1, (pos - line.start) / 1000.0 / dur) : 0;
+            }
+        }
+        BOOL showTyping = next.length && (line ? fraction >= 0.5 : YES);
         UIFont *font = [UIFont systemFontOfSize:H * 0.030];
         NSAttributedString *pastAttr = [[NSAttributedString alloc]
             initWithString:prev ?: @"" attributes:@{NSFontAttributeName: font,
-                                                    NSForegroundColorAttributeName: ink}];
-        NSAttributedString *nextAttr = [[NSAttributedString alloc]
-            initWithString:next ?: @"" attributes:@{NSFontAttributeName: font,
-                                                    NSForegroundColorAttributeName: ink}];
-        y = drawBubble(pastAttr, prev, y, size, NO, font);
+                                                    NSForegroundColorAttributeName: inInk}];
+        y = drawBubble(pastAttr, prev, y, size, NO, font, inFill, -1);
         if (prev.length) y += H * 0.014;
-        if (sg_frameTime >= 0) {
-            double k = MIN(1, sg_frameTime / 0.35);
-            y += (1 - (1 - pow(1 - k, 3))) * H * 0.03;
-        }
         NSAttributedString *nowAttr = [current isEqualToString:@"♪"]
             ? [[NSAttributedString alloc] initWithString:current
                 attributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: UIColor.whiteColor}]
             : sungLine(line, current, font, UIColor.whiteColor,
                        [UIColor colorWithWhite:1 alpha:0.55]);
-        y = drawBubble(nowAttr, current, y, size, YES, font);
+        y = drawBubble(nowAttr, current, y, size, YES, font, inFill, sg_frameTime);
         y += H * 0.005;
         NSString *delivered = @"Delivered";
         UIFont *deliveredFont = [UIFont systemFontOfSize:H * 0.0135];
@@ -527,8 +605,11 @@ static UIImage *drawChatArtwork(CGSize size, NSString *prev, NSString *current, 
                withAttributes:@{NSFontAttributeName: deliveredFont,
                                 NSForegroundColorAttributeName: grey}];
         y += dSize.height + H * 0.014;
-        if (y < H * 0.86) drawBubble(nextAttr, next, y, size, NO, font);
-        drawComposeBar(size);
+        if (showTyping && y < H * 0.86) {
+            drawTypingBubble(y, size, inFill, dotBase,
+                             (line && sg_frameTime >= 0) ? typingAge : -1);
+        }
+        drawComposeBar(size, dark);
     }];
 }
 

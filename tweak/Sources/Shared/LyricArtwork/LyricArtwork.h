@@ -15,6 +15,8 @@
 #define SGKeyLyricArtworkStyle @"spotifyglass.lyricArtwork.style"
 // A fresh style rolled for every track (Batch 31); the picked style above is the fallback.
 #define SGKeyLyricArtworkShuffle @"spotifyglass.lyricArtwork.shuffle"
+// The Chat style's room: 0 Light, 1 Dark, 2 System (Batch 97).
+#define SGKeyLyricArtworkChatTheme @"spotifyglass.lyricArtwork.chatTheme"
 
 typedef NS_ENUM(NSInteger, SGLyricArtworkStyle) {
     SGLyricArtworkPoster = 0,   // the cover behind, darkened, the lines over it

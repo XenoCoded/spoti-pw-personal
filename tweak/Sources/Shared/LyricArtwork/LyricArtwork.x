@@ -3007,6 +3007,13 @@ static NSInteger effectiveQuality(void) {
     return MAX(quality, 0);
 }
 
+// The canvas the artwork is drawn on (Batch 99): Compact unless the
+// user asks for Full. The still takes its bounds from it and clips
+// render at it, so the two never disagree about the picture's size.
+static CGSize artworkCanvas(void) {
+    return SGInt(SGKeyLyricArtworkSize, 0) == 1 ? CGSizeMake(900, 1200) : CGSizeMake(720, 960);
+}
+
 // True when the phone is asking for mercy: Low Power Mode, or real heat.
 // Warming (work nobody asked for yet) yields to it; the line on screen
 // never does.
@@ -3018,12 +3025,10 @@ static BOOL powerThrifty(void) {
 // The clip's size and rate, from the quality choice: Saver for the battery,
 // Max for the full 900x1200 the stills use, Balanced between.
 static void clipSpec(CGSize *size, NSInteger *fps) {
-    // One size at every level — the stills' (Batch 98). The levels used
-    // to shrink the picture as well as the frame rate, and the lock
-    // screen's expanded view re-fit the artwork each time it swapped
-    // between the still and a smaller clip: the small-then-big pulse.
-    // Quality is frame rate only now.
-    *size = CGSizeMake(900, 1200);
+    // One size at every level — the chosen canvas (Batch 98 made the
+    // levels agree with the stills; Batch 99 made the size itself a
+    // setting). Quality is frame rate only.
+    *size = artworkCanvas();
     switch (effectiveQuality()) {
         case 0: *fps = 15; break;
         case 2: *fps = 24; break;
@@ -3130,8 +3135,8 @@ static void offerClip(NSString *lineKey, NSInteger style, SGKaraokeLine *line,
         }
         return;
     }
-    NSString *clipKey = [NSString stringWithFormat:@"%@-%ld-%ld", lineKey, (long)style,
-                         (long)effectiveQuality()];
+    NSString *clipKey = [NSString stringWithFormat:@"%@-%ld-%ld-%ld", lineKey, (long)style,
+                         (long)effectiveQuality(), (long)artworkCanvas().height];
     if ([clipKey isEqualToString:sg_clipFor]) return;
     sg_clipFor = clipKey;
     sg_clipArtwork = nil;
@@ -3190,8 +3195,8 @@ static void warmClips(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSInte
         // line key (track/index/style) plus style and quality again —
         // or the warmed file is never found and the warming was waste
         // heat (Batch 91).
-        NSString *clipKey = [NSString stringWithFormat:@"%@/%ld/%ld-%ld-%ld", trackID, (long)j, (long)style,
-                             (long)style, (long)effectiveQuality()];
+        NSString *clipKey = [NSString stringWithFormat:@"%@/%ld/%ld-%ld-%ld-%ld", trackID, (long)j, (long)style,
+                             (long)style, (long)effectiveQuality(), (long)artworkCanvas().height];
         if (SGLyricClipCachedFile(clipKey)) continue;
         if (!coverImage) {
             @synchronized (sg_lockObject()) { coverImage = cover ? [cover imageWithSize:specSize] : nil; }
@@ -3373,6 +3378,16 @@ static void tick(void) {
             return;
         }
         sg_sweepStep = step;
+        // A clip for this line is already the lock screen's picture:
+        // the video carries the sweep itself, and re-offering a fresh
+        // still under it every word only makes the system thrash
+        // between the two (Batch 99).
+        NSString *clipKey = [NSString stringWithFormat:@"%@-%ld-%ld-%ld", key, (long)style,
+                             (long)effectiveQuality(), (long)artworkCanvas().height];
+        if (sg_clipArtwork && [clipKey isEqualToString:sg_clipFor]) {
+            armWordTimer(lead, position);
+            return;
+        }
     } else {
         sg_lineKey = key;
         sg_sweepStep = sweepStep(lead, position);
@@ -3397,7 +3412,7 @@ static void tick(void) {
     // used to be assigned bare here while the now playing hook and the
     // card reader take it under the lock — the same storeStrong race the
     // picker fixes removed elsewhere in this file.
-    MPMediaItemArtwork *fresh = [[MPMediaItemArtwork alloc] initWithBoundsSize:CGSizeMake(900, 1200)
+    MPMediaItemArtwork *fresh = [[MPMediaItemArtwork alloc] initWithBoundsSize:artworkCanvas()
         requestHandler:^UIImage *(CGSize size) {
             @synchronized (sg_lockObject()) {
                 UIImage *coverImage = cover ? [cover imageWithSize:size] : nil;

@@ -163,6 +163,10 @@ NSArray<SGModRow *> *SGLyricArtworkRows(void) {
         @"For Poster, Plain & bold, Aura and Record: the original look, a darkened one, or washed in the accent gradient the app puts on its accents.",
         SGKeyLyricArtworkFinish, @[@"Original", @"Dark", @"Accent gradient"], 0);
     finish.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO); };
+    SGModRow *artworkSize = SGChoiceRow(@"Artwork size",
+        @"Compact keeps the lock-screen artwork at the smaller size, steady. Full is the biggest picture; the lock screen animates more when it changes. Changing it re-renders clips at the new size.",
+        SGKeyLyricArtworkSize, @[@"Compact", @"Full"], 0);
+    artworkSize.visible = ^BOOL { return SGFlag(SGKeyLyricArtwork, NO); };
     SGModRow *shuffle = SGSwitchRow(@"Shuffle styles",
         @"A fresh style rolled for every track; the pick above is what plays when this is off.",
         SGKeyLyricArtworkShuffle);
@@ -201,6 +205,7 @@ NSArray<SGModRow *> *SGLyricArtworkRows(void) {
         chatTheme,
         wordTiming,
         finish,
+        artworkSize,
         animated,
         quality,
         card,

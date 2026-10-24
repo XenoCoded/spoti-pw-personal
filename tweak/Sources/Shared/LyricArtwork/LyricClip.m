@@ -96,7 +96,10 @@ static NSString *clipDirectory(void) {
 }
 
 static NSString *clipPath(NSString *key) {
-    NSString *safe = [key stringByReplacingOccurrencesOfString:@"/" withString:@"-"];
+    // The v2 schema (Batch 99): clips rendered before the orientation
+    // fix are upside down; a new prefix orphans them (the prune takes
+    // them in time) instead of serving them back forever.
+    NSString *safe = [[@"v2-" stringByAppendingString:key] stringByReplacingOccurrencesOfString:@"/" withString:@"-"];
     return [[clipDirectory() stringByAppendingPathComponent:safe] stringByAppendingPathExtension:@"mp4"];
 }
 
@@ -285,8 +288,12 @@ void SGLyricClipRender(NSString *key, CGSize size, NSInteger fps, double duratio
                                                          CVPixelBufferGetBytesPerRow(buffer), rgb,
                                                          (CGBitmapInfo)(kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little));
             if (context) {
-                CGContextTranslateCTM(context, 0, size.height);
-                CGContextScaleCTM(context, 1, -1);
+                // No flip (Batch 99): a bitmap context's first memory
+                // row is the frame's top, and a renderer image's first
+                // row is its top too, so drawing the CGImage straight
+                // in already lands upright. The translate-and-flip this
+                // used to apply — the recipe for camera buffers — turned
+                // every clip upside down on the lock screen.
                 CGContextDrawImage(context, CGRectMake(0, 0, size.width, size.height), image.CGImage);
                 CGContextRelease(context);
             }

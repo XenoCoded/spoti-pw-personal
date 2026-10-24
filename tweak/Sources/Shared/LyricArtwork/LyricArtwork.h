@@ -22,6 +22,8 @@
 #define SGKeyLyricArtworkWordTiming @"spotifyglass.lyricArtwork.wordTiming"
 // The built-in styles' finish: 0 Original, 1 Dark, 2 Accent gradient (Batch 98).
 #define SGKeyLyricArtworkFinish @"spotifyglass.lyricArtwork.finish"
+// The artwork's canvas: 0 Compact (720x960), 1 Full (900x1200) (Batch 99).
+#define SGKeyLyricArtworkSize @"spotifyglass.lyricArtwork.size"
 
 typedef NS_ENUM(NSInteger, SGLyricArtworkStyle) {
     SGLyricArtworkPoster = 0,   // the cover behind, darkened, the lines over it

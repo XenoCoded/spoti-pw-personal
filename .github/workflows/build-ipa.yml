@@ -12,6 +12,11 @@ on:
         required: false
         default: ""
         type: string
+      skip_mod:
+        description: "Skip the spoti.pw mod entirely: inject only the .deb above into the clean IPA."
+        required: false
+        default: false
+        type: boolean
       upload_method:
         description: "Where to put the result"
         default: artifacts
@@ -61,7 +66,13 @@ jobs:
           fi
           case "$(file --mime-type -b ipa/spotify.ipa)" in application/zip|application/x-ios-app) ;; *) echo "::error::Not an IPA"; exit 1 ;; esac
 
+      - name: Guard skip_mod inputs
+        if: inputs.skip_mod == true
+        run: |
+          [ -n "${{ inputs.eevee_deb_url }}" ] || { echo "::error::skip_mod needs eevee_deb_url set"; exit 1; }
+
       - run: make release
+        if: inputs.skip_mod != true
 
       # Personal-fork addition: optionally inject one extra .deb (Eevee) into the
       # finished IPA as a second cyan pass, so the artifact is the same combined
@@ -70,10 +81,16 @@ jobs:
         if: inputs.eevee_deb_url != ''
         run: |
           curl -fsSL "${{ inputs.eevee_deb_url }}" -o /tmp/extra.deb
-          IN="$(ls out/*.ipa | head -1)"
-          cyan -i "$IN" -o out/combined.ipa -f /tmp/extra.deb -w -s --overwrite
-          rm "$IN"
-          mv out/combined.ipa "$IN"
+          mkdir -p out
+          if [ "${{ inputs.skip_mod }}" = "true" ]; then
+            IN="ipa/spotify.ipa"
+            OUT="out/spotify-eevee.ipa"
+          else
+            IN="$(ls out/*.ipa | head -1)"
+            OUT="$IN"
+            rm "$IN"
+          fi
+          cyan -i "$IN" -o "$OUT" -f /tmp/extra.deb -w -s --overwrite
           ls -lh out/
 
       - uses: actions/upload-artifact@v5
